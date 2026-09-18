@@ -1,0 +1,30 @@
+---
+description: Git, layout, size, comments, and web verification
+alwaysApply: true
+---
+
+# Git
+
+- Start every new branch off `main`.
+- Prefix branches with `feat/`, `test/`, or `bugfix/` (never `cursor/`).
+- Ask before pushing.
+- Put a summary in the commit message.
+- When changing existing code, scan repo dependencies so modules stay compatible.
+
+# Layout
+
+- Source in `src/`.
+- Tests in `test/`.
+- Hunt sim lives in `src/simulation/` so hardware code can share this repo.
+
+# Size and style
+
+- Keep functions under 45 lines.
+- Use tabs for indentation.
+- Write concise code.
+- Comment why a change exists, not only what it does.
+- Do not erase old comments that are still useful.
+
+# Web
+
+- After UI/layout/state changes, verify in the browser end to end (click, type, navigate). A screenshot is not enough.

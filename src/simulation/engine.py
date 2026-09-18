@@ -84,76 +84,77 @@ class HuntSim:
 		self.controller.poll(self.t_s)
 
 	def snapshot(self) -> dict:
-		d = self.controller.last_decision
-		px, py = self.gantry.get_position()
-		vx, vy = self.gantry.get_velocity()
-		cam = self.cfg.camera
+		# Why split: HUD payload is large; keep each builder under 45 lines.
 		frame = self.controller._latest
 		seen = frame.ferret if frame else TrackState()
+		cam = self.cfg.camera
 		return {
 			"t_s": self.t_s,
 			"trial": self.trial.value,
-			"arena": {
-				"width_mm": cam.width_mm,
-				"height_mm": cam.height_mm,
-				"width_px": cam.width_px,
-				"height_px": cam.height_px,
-				"gsd_mm_per_px": cam.gsd_mm_per_px,
-			},
+			"arena": _arena_dict(cam),
 			"ferret_true": _track_dict(self.true_ferret),
 			"ferret_camera": _track_dict(seen),
 			"prey": _track_dict(self._prey_track()),
-			"camera": {
-				"model": cam.model,
-				"fps": cam.frame_rate_fps,
-				"exposure_us": cam.exposure_us,
-				"usb_transfer_ms": cam.usb_transfer_ms,
-				"tracking_pipeline_ms": cam.tracking_pipeline_ms,
-				"grab_to_host_ms": cam.grab_to_host_s * 1e3,
-				"grab_to_track_ms": cam.grab_to_track_s * 1e3,
-				"last_grab_to_frame_ms": self.camera.last_grab_to_frame_ms,
-				"delivered": self.camera.delivered,
-				"dropped": self.camera.dropped,
-				"strategy": self.camera.GrabStrategy,
-				"pixel_format": self.camera.PixelFormat,
-			},
-			"zaber": {
-				"comm": self.cfg.zaber.comm,
-				"rtt_ms": self.gantry.last_rtt_ms,
-				"busy": self.gantry.is_busy(),
-				"x_mm": px,
-				"y_mm": py,
-				"vx_mm_s": vx,
-				"vy_mm_s": vy,
-				"speed_mm_s": math.hypot(vx, vy),
-				"heading_deg": math.degrees(math.atan2(-vy, vx)) if math.hypot(vx, vy) > 1 else 0.0,
-				"max_speed_mm_s": self.cfg.zaber.max_speed_mm_s,
-				"max_accel_mm_s2": self.cfg.zaber.max_accel_mm_s2,
-				"api_calls": [asdict(c) for c in list(self.gantry.calls)[:8]],
-			},
-			"decision": {
-				"reason": d.reason,
-				"threat": d.threat,
-				"dist_threat": d.dist_threat,
-				"wall_push": d.wall_push,
-				"approach_threat": d.approach_threat,
-				"gap_error_mm": d.gap_error_mm,
-				"enable_motion": d.enable_motion,
-				"use_planned_flee": False,
-				"vx_mm_s": d.target_vx_mm_s,
-				"vy_mm_s": d.target_vy_mm_s,
-				"flee_direction_deg": d.flee_direction_deg,
-				"compute_ms": self.controller.last_decision_ms,
-				"stale_stops": self.controller.stale_stops,
-			},
-			"scene": {
-				"distance_mm": frame.distance_mm if frame else -1,
-				"bearing_deg": frame.bearing_deg if frame else 0,
-				"closing_speed_mm_s": frame.closing_speed_mm_s if frame else 0,
-				"frame_index": self.last_frame_index,
-			},
+			"camera": self._camera_dict(cam),
+			"zaber": self._zaber_dict(),
+			"decision": self._decision_dict(),
+			"scene": _scene_dict(frame, self.last_frame_index),
 			"control_hz": 1000.0 / self.cfg.control_period_ms,
 			"policy": asdict(self.cfg.chase),
+		}
+
+	def _camera_dict(self, cam) -> dict:
+		return {
+			"model": cam.model,
+			"fps": cam.frame_rate_fps,
+			"exposure_us": cam.exposure_us,
+			"usb_transfer_ms": cam.usb_transfer_ms,
+			"tracking_pipeline_ms": cam.tracking_pipeline_ms,
+			"grab_to_host_ms": cam.grab_to_host_s * 1e3,
+			"grab_to_track_ms": cam.grab_to_track_s * 1e3,
+			"last_grab_to_frame_ms": self.camera.last_grab_to_frame_ms,
+			"delivered": self.camera.delivered,
+			"dropped": self.camera.dropped,
+			"strategy": self.camera.GrabStrategy,
+			"pixel_format": self.camera.PixelFormat,
+		}
+
+	def _zaber_dict(self) -> dict:
+		px, py = self.gantry.get_position()
+		vx, vy = self.gantry.get_velocity()
+		spd = math.hypot(vx, vy)
+		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
+		return {
+			"comm": self.cfg.zaber.comm,
+			"rtt_ms": self.gantry.last_rtt_ms,
+			"busy": self.gantry.is_busy(),
+			"x_mm": px,
+			"y_mm": py,
+			"vx_mm_s": vx,
+			"vy_mm_s": vy,
+			"speed_mm_s": spd,
+			"heading_deg": heading,
+			"max_speed_mm_s": self.cfg.zaber.max_speed_mm_s,
+			"max_accel_mm_s2": self.cfg.zaber.max_accel_mm_s2,
+			"api_calls": [asdict(c) for c in list(self.gantry.calls)[:8]],
+		}
+
+	def _decision_dict(self) -> dict:
+		d = self.controller.last_decision
+		return {
+			"reason": d.reason,
+			"threat": d.threat,
+			"dist_threat": d.dist_threat,
+			"wall_push": d.wall_push,
+			"approach_threat": d.approach_threat,
+			"gap_error_mm": d.gap_error_mm,
+			"enable_motion": d.enable_motion,
+			"use_planned_flee": False,
+			"vx_mm_s": d.target_vx_mm_s,
+			"vy_mm_s": d.target_vy_mm_s,
+			"flee_direction_deg": d.flee_direction_deg,
+			"compute_ms": self.controller.last_decision_ms,
+			"stale_stops": self.controller.stale_stops,
 		}
 
 	def _prey_track(self) -> TrackState:
@@ -172,6 +173,25 @@ class HuntSim:
 				self.true_ferret.direction_deg = math.degrees(math.atan2(-dy, dx))
 		self._prev_fx = self.true_ferret.x_mm
 		self._prev_fy = self.true_ferret.y_mm
+
+
+def _arena_dict(cam) -> dict:
+	return {
+		"width_mm": cam.width_mm,
+		"height_mm": cam.height_mm,
+		"width_px": cam.width_px,
+		"height_px": cam.height_px,
+		"gsd_mm_per_px": cam.gsd_mm_per_px,
+	}
+
+
+def _scene_dict(frame, frame_index: int) -> dict:
+	return {
+		"distance_mm": frame.distance_mm if frame else -1,
+		"bearing_deg": frame.bearing_deg if frame else 0,
+		"closing_speed_mm_s": frame.closing_speed_mm_s if frame else 0,
+		"frame_index": frame_index,
+	}
 
 
 def _track_dict(t: TrackState) -> dict:
