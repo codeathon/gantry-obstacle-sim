@@ -61,6 +61,14 @@ class ZaberConfig:
 	home_x_mm: float
 	home_y_mm: float
 	comm: str
+	# Why: JSON opt-in; PREY_ZABER / ZABER_PORT still win in want_hardware().
+	use_hardware: bool = False
+	port: str = ""
+	device_index: int = 0
+	x_axis: int = 1
+	y_axis: int = 2
+	lockstep_group: int = 0
+	poll_min_ms: float = 20.0
 
 
 @dataclass(frozen=True)
@@ -133,4 +141,11 @@ def _zaber_config(zb: dict) -> ZaberConfig:
 		home_x_mm=float(zb["home_x_mm"]),
 		home_y_mm=float(zb["home_y_mm"]),
 		comm=str(zb["comm"]),
+		use_hardware=bool(zb.get("use_hardware", False)),
+		port=str(zb.get("port", "")),
+		device_index=int(zb.get("device_index", 0)),
+		x_axis=int(zb.get("x_axis", 1)),
+		y_axis=int(zb.get("y_axis", 2)),
+		lockstep_group=int(zb.get("lockstep_group", 0)),
+		poll_min_ms=float(zb.get("poll_min_ms", 20.0)),
 	)
