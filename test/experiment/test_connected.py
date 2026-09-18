@@ -41,6 +41,17 @@ def test_chase_feed_overwrites_prey_from_encoder() -> None:
 	assert scene.frame_index == 1
 
 
+def test_operator_start_reaches_tracking_frame() -> None:
+	gantry = ZaberGantry()
+	exp = Experiment(gantry, AceCamera())
+	exp.start()
+	exp.on_operator_key("s")
+	scene = exp.chase_feed_loop()
+	exp.shutdown()
+	assert scene is not None
+	assert scene.trial_phase == TrialPhase.running
+
+
 def test_experiment_run_dry_cycle() -> None:
 	gantry = ZaberGantry()
 	exp = Experiment(gantry, AceCamera())
