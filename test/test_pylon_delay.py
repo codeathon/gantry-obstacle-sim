@@ -1,7 +1,7 @@
 """Camera pipeline delay: delivered ferret lags the pointer."""
 
-from prey_gantry.engine import HuntSim
-from prey_gantry.tracking_frame import TrialPhase
+from simulation.engine import HuntSim
+from simulation.tracking_frame import TrialPhase
 
 
 def test_camera_ferret_lags_pointer():

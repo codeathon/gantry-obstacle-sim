@@ -1,6 +1,6 @@
 """Hunt-event re-arm matches pylon-track 1500 ms interval."""
 
-from prey_gantry.hunt_event import HuntArmState, evaluate_hunt_event, note_hunt_flee_complete
+from simulation.hunt_event import HuntArmState, evaluate_hunt_event, note_hunt_flee_complete
 
 
 def test_rising_edge_arms_once():

@@ -5,12 +5,12 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
-from prey_gantry.chase_controller import ChaseController
-from prey_gantry.chase_policy import fill_tracking_derived
-from prey_gantry.config import SimConfig, load_sim_config
-from prey_gantry.pylon_sim import SimulatedPylonCamera
-from prey_gantry.tracking_frame import TrackState, TrialPhase
-from prey_gantry.zaber_sim import SimulatedGantry
+from simulation.chase_controller import ChaseController
+from simulation.chase_policy import fill_tracking_derived
+from simulation.config import SimConfig, load_sim_config
+from simulation.pylon_sim import SimulatedPylonCamera
+from simulation.tracking_frame import TrackState, TrialPhase
+from simulation.zaber_sim import SimulatedGantry
 
 
 @dataclass

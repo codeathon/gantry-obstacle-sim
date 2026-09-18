@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 import time
 
-from prey_gantry.chase_policy import ChaseDecision, compute_chase_decision
-from prey_gantry.config import ChasePolicyConfig
-from prey_gantry.tracking_frame import TrackingFrame
-from prey_gantry.zaber_sim import SimulatedGantry
+from simulation.chase_policy import ChaseDecision, compute_chase_decision
+from simulation.config import ChasePolicyConfig
+from simulation.tracking_frame import TrackingFrame
+from simulation.zaber_sim import SimulatedGantry
 
 
 class ChaseController:

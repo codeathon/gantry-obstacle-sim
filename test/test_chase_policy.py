@@ -1,8 +1,8 @@
 """Soft keep-away policy: preferred gap, slight nudge, wall dodge."""
 
-from prey_gantry.chase_policy import compute_chase_decision, fill_tracking_derived
-from prey_gantry.config import load_sim_config
-from prey_gantry.tracking_frame import TrackingFrame, TrackingQuality, TrackState, TrialPhase
+from simulation.chase_policy import compute_chase_decision, fill_tracking_derived
+from simulation.config import load_sim_config
+from simulation.tracking_frame import TrackingFrame, TrackingQuality, TrackState, TrialPhase
 
 
 def _cfg():

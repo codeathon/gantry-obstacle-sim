@@ -9,8 +9,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from prey_gantry.config import ChasePolicyConfig
-from prey_gantry.tracking_frame import TrackingFrame, TrialPhase
+from simulation.config import ChasePolicyConfig
+from simulation.tracking_frame import TrackingFrame, TrialPhase
 
 
 def _clamp01(v: float) -> float:

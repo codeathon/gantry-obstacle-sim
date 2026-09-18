@@ -2,7 +2,7 @@
 
 Timed hunt simulation of the [pylon-track](https://github.com/codeathon/pylon-track) hunt, with the 1D ODrive chain replaced by a **Zaber XY** carriage.
 
-Imported from the Cursor agent work on [prairie-live#13](https://github.com/codeathon/prairie-live/pull/13) (`prey_gantry/`), which was written as a standalone package.
+Simulation code lives in `src/simulation/` so this repo can also hold the real gantry stack later. Imported from [prairie-live#13](https://github.com/codeathon/prairie-live/pull/13).
 
 The ferret is **your mouse pointer**. The prey toy is the gantry, commanded through the same `move_absolute` / `move_velocity` / `stop` shapes as [Zaber Motion Library](https://software.zaber.com/motion-library/api/py). The camera path uses pylon-track’s Basler ace 2 numbers (not the ferret_behavior 7-cam mocap stack).
 
@@ -28,7 +28,7 @@ Chase policy is a **soft keep-away**: hold ~420 mm from the ferret, nudge slight
 
 ```bash
 pip install -e ".[dev]"
-PYTHONPATH=src python -m prey_gantry.web
+PYTHONPATH=src python -m simulation.web
 ```
 
 Open http://127.0.0.1:8765 — **S** start trial, **E** end, **R** reset.
