@@ -157,14 +157,16 @@ function heading(x, y, deg, color) {
 }
 
 function renderHud() {
+	// Why split: keep each HUD block under 45 lines.
 	const s = state;
 	badge.textContent = s.trial;
 	badge.className = "badge " + s.trial;
+	hud.innerHTML = hudCamera(s) + hudZaber(s) + hudAnimals(s) + hudDecision(s);
+}
+
+function hudCamera(s) {
 	const c = s.camera;
-	const z = s.zaber;
-	const d = s.decision;
-	const sc = s.scene;
-	hud.innerHTML = `
+	return `
 		<h2>Basler / pylon</h2>
 		${row("model", c.model)}
 		${row("format", `${c.pixel_format} ${s.arena.width_px}×${s.arena.height_px}`)}
@@ -178,7 +180,12 @@ function renderHud() {
 		${row("delivered / dropped", `${c.delivered} / ${c.dropped}`)}
 		${row("GSD", s.arena.gsd_mm_per_px + " mm/px")}
 		${row("FOV", `${s.arena.width_mm.toFixed(0)} × ${s.arena.height_mm.toFixed(0)} mm`)}
+	`;
+}
 
+function hudZaber(s) {
+	const z = s.zaber;
+	return `
 		<h2>Zaber API</h2>
 		${row("link", z.comm + " RTT " + z.rtt_ms.toFixed(1) + " ms")}
 		${row("busy", String(z.busy), z.busy ? "warn" : "ok")}
@@ -186,17 +193,26 @@ function renderHud() {
 		${row("velocity", `${z.speed_mm_s.toFixed(0)} mm/s  ${z.heading_deg.toFixed(0)}°`)}
 		${row("limits", `${z.max_speed_mm_s} mm/s · ${z.max_accel_mm_s2} mm/s²`)}
 		<ul class="calls">${z.api_calls.map((a) => `<li>${a.name} ${esc(a.detail)}</li>`).join("")}</ul>
+	`;
+}
 
+function hudAnimals(s) {
+	const sc = s.scene;
+	return `
 		<h2>Ferret (pointer / camera)</h2>
 		${row("true", fmtTrack(s.ferret_true))}
 		${row("camera seen", fmtTrack(s.ferret_camera))}
-
 		<h2>Prey (gantry encoder)</h2>
 		${row("state", fmtTrack(s.prey))}
 		${row("gap", sc.distance_mm.toFixed(0) + " mm")}
 		${row("bearing", sc.bearing_deg.toFixed(0) + "°")}
 		${row("closing", sc.closing_speed_mm_s.toFixed(0) + " mm/s")}
+	`;
+}
 
+function hudDecision(s) {
+	const d = s.decision;
+	return `
 		<h2>Chase decision @ ${s.control_hz.toFixed(0)} Hz</h2>
 		<div class="reason">${esc(d.reason)}</div>
 		${row("preferred gap", (s.policy.preferred_gap_mm || 0).toFixed(0) + " mm")}

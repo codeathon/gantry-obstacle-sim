@@ -17,10 +17,6 @@ def _clamp01(v: float) -> float:
 	return max(0.0, min(1.0, v))
 
 
-def _clampf(v: float, lo: float, hi: float) -> float:
-	return max(lo, min(hi, v))
-
-
 def _norm(x: float, y: float) -> tuple[float, float, float]:
 	n = math.hypot(x, y)
 	if n < 1e-6:
@@ -113,49 +109,62 @@ def _engage_accel(
 ) -> tuple[float, float, str]:
 	px, py = scene.prey.x_mm, scene.prey.y_mm
 	fx, fy = scene.ferret.x_mm, scene.ferret.y_mm
-	ux, uy, dist = _norm(px - fx, py - fy)
-	if dist < 1e-3:
-		# Overlap: break out toward arena center so we do not freeze.
-		ux, uy, _ = _norm(width_mm * 0.5 - px, height_mm * 0.5 - py)
-		dist = 0.0
-
-	preferred = cfg.preferred_gap_mm
-	gap_err = preferred - dist
-	out.gap_error_mm = gap_err
-	# Close → push away; far → ease back toward ferret (keeps the hunt alive).
-	if gap_err > 0:
-		out.dist_threat = _clamp01(gap_err / max(preferred - cfg.min_gap_mm, 1.0))
-		radial = ux * gap_err * cfg.away_gain
-		radial_y = uy * gap_err * cfg.away_gain
-		tag = "nudge_away"
-	else:
-		out.dist_threat = 0.0
-		pull = min(-gap_err, cfg.max_pull_mm)
-		radial = -ux * pull * cfg.toward_gain
-		radial_y = -uy * pull * cfg.toward_gain
-		tag = "reel_in"
-
-	# Lateral slip when pressed: avoid head-on stall, stay playful.
-	tx, ty = -uy, ux
-	closing = max(0.0, scene.closing_speed_mm_s)
-	lateral = closing * cfg.lateral_gain
-	# Bias slip toward center so we do not choose the wall side of a tangent.
-	cx, cy = width_mm * 0.5 - px, height_mm * 0.5 - py
-	if tx * cx + ty * cy < 0:
-		tx, ty = -tx, -ty
-
+	ux, uy, dist = _prey_away_unit(px, py, fx, fy, width_mm, height_mm)
+	rx, ry, tag = _gap_radial(ux, uy, dist, cfg, out)
+	tx, ty, lateral = _center_slip(ux, uy, px, py, width_mm, height_mm, scene, cfg)
 	wx, wy, wall = _wall_push(px, py, width_mm, height_mm, cfg)
 	out.wall_push = wall
-	out.approach_threat = _clamp01(closing / 800.0)
+	out.approach_threat = _clamp01(max(0.0, scene.closing_speed_mm_s) / 800.0)
 	out.cone_threat = wall
-
-	ax = radial + tx * lateral + wx
-	ay = radial_y + ty * lateral + wy
 	if wall > 0.35:
 		tag = "edge_dodge"
 	elif dist < cfg.min_gap_mm:
 		tag = "press"
-	return ax, ay, tag
+	return rx + tx * lateral + wx, ry + ty * lateral + wy, tag
+
+
+def _prey_away_unit(
+	px: float, py: float, fx: float, fy: float, width_mm: float, height_mm: float
+) -> tuple[float, float, float]:
+	ux, uy, dist = _norm(px - fx, py - fy)
+	if dist >= 1e-3:
+		return ux, uy, dist
+	# Overlap: break out toward arena center so we do not freeze.
+	ux, uy, _ = _norm(width_mm * 0.5 - px, height_mm * 0.5 - py)
+	return ux, uy, 0.0
+
+
+def _gap_radial(
+	ux: float, uy: float, dist: float, cfg: ChasePolicyConfig, out: ChaseDecision
+) -> tuple[float, float, str]:
+	# Close → push away; far → ease back toward ferret (keeps the hunt alive).
+	gap_err = cfg.preferred_gap_mm - dist
+	out.gap_error_mm = gap_err
+	if gap_err > 0:
+		out.dist_threat = _clamp01(gap_err / max(cfg.preferred_gap_mm - cfg.min_gap_mm, 1.0))
+		return ux * gap_err * cfg.away_gain, uy * gap_err * cfg.away_gain, "nudge_away"
+	out.dist_threat = 0.0
+	pull = min(-gap_err, cfg.max_pull_mm)
+	return -ux * pull * cfg.toward_gain, -uy * pull * cfg.toward_gain, "reel_in"
+
+
+def _center_slip(
+	ux: float,
+	uy: float,
+	px: float,
+	py: float,
+	width_mm: float,
+	height_mm: float,
+	scene: TrackingFrame,
+	cfg: ChasePolicyConfig,
+) -> tuple[float, float, float]:
+	# Lateral slip when pressed: avoid head-on stall, stay playful.
+	tx, ty = -uy, ux
+	# Bias slip toward center so we do not choose the wall side of a tangent.
+	cx, cy = width_mm * 0.5 - px, height_mm * 0.5 - py
+	if tx * cx + ty * cy < 0:
+		tx, ty = -tx, -ty
+	return tx, ty, max(0.0, scene.closing_speed_mm_s) * cfg.lateral_gain
 
 
 def _wall_push(
