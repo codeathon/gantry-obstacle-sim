@@ -5,6 +5,9 @@ from __future__ import annotations
 import time
 
 from basler.config import configure_camera
+from basler.fov import fov_from_settings
+from basler.load import load_camera_config
+from basler.optics import ACE_MODEL, GSD_MM_PX
 from basler.pylon_api import (
 	StubPylonCamera,
 	instant_camera_close,
@@ -17,7 +20,7 @@ from basler.pylon_api import (
 	stop_grabbing,
 )
 from basler.settings import CameraSettings
-from basler.types import CameraFrame
+from basler.types import CameraFov, CameraFrame
 
 
 def open_ace(serial_or_index: str | int | None = None) -> StubPylonCamera:
@@ -30,8 +33,8 @@ def open_ace(serial_or_index: str | int | None = None) -> StubPylonCamera:
 
 
 def configure_ace(cam: StubPylonCamera, settings: CameraSettings | None = None) -> None:
-	# Why: Mono8, AOI, exposure, fps, LatestImageOnly — pylon-track camera_config.
-	configure_camera(cam, settings or CameraSettings())
+	# Why: Mono8, AOI, exposure, fps from pylon-track camera_config.json.
+	configure_camera(cam, settings if settings is not None else load_camera_config())
 
 
 def make_camera_frame(grab: dict, frame_index: int, host_time_ns: int) -> CameraFrame:
@@ -50,8 +53,10 @@ class AceCamera:
 	"""Owns stub InstantCamera; experiment never touches Pylon nodes."""
 
 	def __init__(self, settings: CameraSettings | None = None) -> None:
-		self.settings = settings or CameraSettings()
+		# Why: C++ struct defaults are a 960-tall crop; the Ace JSON is full frame.
+		self.settings = settings if settings is not None else load_camera_config()
 		self._cam: StubPylonCamera | None = None
+		self.backend = "stub"
 
 	def open(self) -> None:
 		self._cam = open_ace()
@@ -85,6 +90,19 @@ class AceCamera:
 
 	def register_handler(self, handler: object) -> None:
 		register_image_event_handler(self._require(), handler)
+
+	def fov(self) -> CameraFov:
+		# Why: stub FOV is the JSON AOI; hardware reads Width/Height after configure.
+		if self._cam is None or "Width" not in self._cam.nodes:
+			return fov_from_settings(self.settings)
+		return CameraFov(
+			width_px=int(self._cam.nodes["Width"]),
+			height_px=int(self._cam.nodes.get("Height") or 0),
+			offset_x=int(self._cam.nodes.get("OffsetX") or 0),
+			offset_y=int(self._cam.nodes.get("OffsetY") or 0),
+			gsd_mm_per_px=GSD_MM_PX,
+			model=ACE_MODEL,
+		)
 
 	def _require(self) -> StubPylonCamera:
 		if self._cam is None:

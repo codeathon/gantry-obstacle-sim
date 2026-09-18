@@ -5,20 +5,33 @@ from __future__ import annotations
 import math
 
 from basler.types import CameraFrame
+from vision.detect import AnimalDetector
 from vision.tracking_frame import TrackingFrame, TrackingQuality, TrackState, TrialPhase
 
 
 class TrackingPipeline:
-	def __init__(self, gsd_mm_per_px: float = 1.035, fps: float = 200.0) -> None:
+	def __init__(
+		self,
+		gsd_mm_per_px: float = 1.035,
+		fps: float = 200.0,
+		detector: AnimalDetector | None = None,
+	) -> None:
 		# Why: pylon-track pos_mm = pos_px * GSD; speed from px delta * fps * GSD.
 		self._gsd = gsd_mm_per_px
 		self._fps = fps
 		self._prev_px: tuple[float, float] | None = None
 		self._prev_ns = 0
+		# Why: tests shrink warmup/exclude; live Ace uses AnimalDetector defaults.
+		self._detector = detector or AnimalDetector(gsd_mm_per_px=gsd_mm_per_px)
 
-	def process(self, camera_frame: CameraFrame, trial: TrialPhase) -> TrackingFrame:
+	def process(
+		self,
+		camera_frame: CameraFrame,
+		trial: TrialPhase,
+		prey_xy_mm: tuple[float, float] | None = None,
+	) -> TrackingFrame:
 		# Why: CameraFrame in, TrackingFrame out — no Pylon or Zaber types.
-		ferret = self._ferret_from_camera(camera_frame)
+		ferret = self._ferret_from_camera(camera_frame, prey_xy_mm)
 		quality = TrackingQuality()
 		if ferret.valid:
 			quality.ferret_confidence = 1.0
@@ -31,12 +44,18 @@ class TrackingPipeline:
 			trial_phase=trial,
 		)
 
-	def _ferret_from_camera(self, frame: CameraFrame) -> TrackState:
-		if frame.ferret_x_px is None or frame.ferret_y_px is None:
-			# Why: no blob → camera did not see the ferret this grab.
-			self._prev_px = None
-			return TrackState()
-		return self._track_px(frame.ferret_x_px, frame.ferret_y_px, frame.host_time_ns)
+	def _ferret_from_camera(
+		self, frame: CameraFrame, prey_xy_mm: tuple[float, float] | None
+	) -> TrackState:
+		x_px, y_px = frame.ferret_x_px, frame.ferret_y_px
+		if x_px is None or y_px is None:
+			# Why: live Ace has Mono8 only; ignore the toy blob via encoder XY.
+			hit = self._detector.update(frame, prey_xy_mm)
+			if hit is None:
+				self._prev_px = None
+				return TrackState()
+			x_px, y_px = hit
+		return self._track_px(x_px, y_px, frame.host_time_ns)
 
 	def _track_px(self, x_px: float, y_px: float, host_ns: int) -> TrackState:
 		speed, direction = self._motion_from_px(x_px, y_px, host_ns)

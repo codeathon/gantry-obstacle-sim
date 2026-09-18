@@ -11,10 +11,12 @@ dependencies = [
 
 [project.optional-dependencies]
 zaber = ["zaber-motion>=7.0"]
+pylon = ["pypylon>=3.0", "numpy>=1.26"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
 prey-gantry-sim = "simulation.web.app:main"
+prey-gantry-grab = "experiment.grab_frames:main"
 
 [build-system]
 requires = ["setuptools>=69"]

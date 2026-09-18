@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from basler.camera import AceCamera
+from basler.factory import open_grabber
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackingFrame, TrialPhase
 
 
 def main() -> TrackingFrame | None:
-	# Why: open Ace, grab, print TrackingFrame; never construct Gantry.
-	cam = AceCamera()
+	# Why: open Ace (pypylon or stub), grab, never construct Gantry.
+	cam = open_grabber()
 	cam.open()
 	cam.configure()
 	cam.start_grabbing()
