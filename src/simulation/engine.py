@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
+from basler.pylon import want_ace
 from experiment.orchestrator import Experiment
 from simulation.config import SimConfig, load_sim_config
 from simulation.pylon_sim import SimulatedPylonCamera
@@ -19,8 +20,23 @@ class Pointer:
 	y_mm: float
 
 
+def _select_camera(cam):
+	# Why: live Ace blob drives chase when PREY_ACE finds a device; else pointer delay model.
+	if not want_ace():
+		return SimulatedPylonCamera(cam)
+	from basler.factory import open_grabber
+
+	grabber = open_grabber()
+	if getattr(grabber, "backend", "") == "pylon":
+		return grabber
+	close = getattr(grabber, "close", None)
+	if callable(close):
+		close()
+	return SimulatedPylonCamera(cam)
+
+
 class HuntSim:
-	def __init__(self, cfg: SimConfig | None = None) -> None:
+	def __init__(self, cfg: SimConfig | None = None, grabber: object | None = None) -> None:
 		self.cfg = cfg or load_sim_config()
 		cam = self.cfg.camera
 		self.t_s = 0.0
@@ -29,7 +45,12 @@ class HuntSim:
 		self._prev_fy = self.true_ferret.y_mm
 		# Why: SimulatedGantry unless PREY_ZABER / use_hardware finds an X-MCC.
 		self.gantry = open_gantry(self.cfg)
-		self.camera = SimulatedPylonCamera(cam)
+		self.camera = grabber if grabber is not None else _select_camera(cam)
+		self._live_ace = getattr(self.camera, "backend", "") == "pylon"
+		if self._live_ace:
+			# Why: 1 ms web loop must not block on RetrieveResult(20).
+			self.camera.timeout_ms = 0
+			self.true_ferret.valid = False
 		self.exp = self._bind_experiment(cam)
 		self.last_frame_index = -1
 
@@ -61,7 +82,9 @@ class HuntSim:
 		self.exp.trial.phase = phase
 
 	def set_pointer(self, x_mm: float, y_mm: float) -> None:
-		# Why: pointer is the animal in the arena; chase uses camera pixels, not this.
+		# Why: pointer is only the animal when no live Ace is grabbing Mono8.
+		if self._live_ace:
+			return
 		cam = self.cfg.camera
 		self.true_ferret.x_mm = min(max(x_mm, 0.0), cam.width_mm)
 		self.true_ferret.y_mm = min(max(y_mm, 0.0), cam.height_mm)
@@ -77,16 +100,22 @@ class HuntSim:
 			self.gantry.home()
 
 	def step(self, dt_s: float) -> None:
-		self._update_ferret_kinematics(dt_s)
+		if not self._live_ace:
+			self._update_ferret_kinematics(dt_s)
 		self.t_s += dt_s
 		# Why: firmware integrates; SimulatedGantry.step is the trapezoid stand-in.
 		step_g = getattr(self.gantry, "step", None)
 		if callable(step_g):
 			step_g(dt_s, self.t_s)
-		self.camera.tick(self.t_s, self.true_ferret)
-		scene = self.exp.chase_feed_loop(self.t_s)
+		tick = getattr(self.camera, "tick", None)
+		if callable(tick):
+			tick(self.t_s, self.true_ferret)
+		# Why: live Ace timestamps are wall clock; sim t_s would never stale-stop.
+		scene = self.exp.chase_feed_loop(None if self._live_ace else self.t_s)
 		if scene is not None:
 			self.last_frame_index = scene.frame_index
+			if self._live_ace:
+				self._adopt_ace_ferret(scene)
 
 	def snapshot(self) -> dict:
 		# Why split: HUD payload is large; keep each builder under 45 lines.
@@ -96,7 +125,8 @@ class HuntSim:
 		return {
 			"t_s": self.t_s,
 			"trial": self.trial.value,
-			"arena": _arena_dict(cam),
+			"arena": self._arena_snapshot(cam),
+			"ferret_source": "ace" if self._live_ace else "pointer",
 			"ferret_true": _track_dict(self.true_ferret),
 			"ferret_camera": _track_dict(seen),
 			"prey": _track_dict(self._prey_track()),
@@ -109,20 +139,50 @@ class HuntSim:
 		}
 
 	def _camera_dict(self, cam) -> dict:
+		grab = self.camera
 		return {
-			"model": cam.model,
+			"model": str(getattr(grab, "model", cam.model)),
+			"backend": str(getattr(grab, "backend", "sim")),
 			"fps": cam.frame_rate_fps,
 			"exposure_us": cam.exposure_us,
 			"usb_transfer_ms": cam.usb_transfer_ms,
 			"tracking_pipeline_ms": cam.tracking_pipeline_ms,
 			"grab_to_host_ms": cam.grab_to_host_s * 1e3,
 			"grab_to_track_ms": cam.grab_to_track_s * 1e3,
-			"last_grab_to_frame_ms": self.camera.last_grab_to_frame_ms,
-			"delivered": self.camera.delivered,
-			"dropped": self.camera.dropped,
-			"strategy": self.camera.GrabStrategy,
-			"pixel_format": self.camera.PixelFormat,
+			"last_grab_to_frame_ms": float(getattr(grab, "last_grab_to_frame_ms", 0.0)),
+			"delivered": int(getattr(grab, "delivered", 0)),
+			"dropped": int(getattr(grab, "dropped", 0)),
+			"strategy": str(getattr(grab, "GrabStrategy", "LatestImageOnly")),
+			"pixel_format": str(getattr(grab, "PixelFormat", "Mono8")),
 		}
+
+	def _arena_snapshot(self, cam) -> dict:
+		fov_fn = getattr(self.camera, "fov", None)
+		if callable(fov_fn):
+			fov = fov_fn()
+			return {
+				"width_mm": fov.width_mm,
+				"height_mm": fov.height_mm,
+				"width_px": fov.width_px,
+				"height_px": fov.height_px,
+				"gsd_mm_per_px": fov.gsd_mm_per_px,
+			}
+		return _arena_dict(cam)
+
+	def _adopt_ace_ferret(self, scene) -> None:
+		# Why: HUD gold ferret is the Ace blob, not a leftover pointer spawn.
+		seen = scene.ferret
+		if not seen.valid:
+			return
+		self.true_ferret = TrackState(
+			seen.x_mm,
+			seen.y_mm,
+			seen.speed_mm_s,
+			seen.direction_deg,
+			True,
+			seen.x_px,
+			seen.y_px,
+		)
 
 	def _zaber_dict(self) -> dict:
 		px, py = self.gantry.get_xy()

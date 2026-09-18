@@ -4,7 +4,7 @@ Timed hunt simulation of the [pylon-track](https://github.com/codeathon/pylon-tr
 
 Simulation code lives in `src/simulation/` so this repo can also hold the real gantry stack later. Imported from [prairie-live#13](https://github.com/codeathon/prairie-live/pull/13).
 
-The ferret is **your mouse pointer**. The prey toy is the gantry, commanded through the same `move_absolute` / `move_velocity` / `stop` shapes as [Zaber Motion Library](https://software.zaber.com/motion-library/api/py). The camera path uses pylon-track’s Basler ace 2 numbers (not the ferret_behavior 7-cam mocap stack).
+The ferret is the **live Ace blob** when `PREY_ACE=1` finds a camera, otherwise **your mouse pointer** (delayed grab model). The prey toy is the gantry, commanded through the same `move_absolute` / `move_velocity` / `stop` shapes as [Zaber Motion Library](https://software.zaber.com/motion-library/api/py). The camera path uses pylon-track’s Basler ace 2 numbers (not the ferret_behavior 7-cam mocap stack).
 
 ## What is timed
 
@@ -20,7 +20,7 @@ The ferret is **your mouse pointer**. The prey toy is the gantry, commanded thro
 | Soft keep-away | preferred gap / max engage speed | ~420 mm / ≤480 mm/s |
 | Wall margin | edge dodge band | 280 mm |
 
-The grey ghost on the arena is the ferret pose the chase loop has actually received (mid-exposure sample + USB + track). Prey XY is the **encoder** (Zaber `get_position`), as on a gantry.
+The grey ghost on the arena is the ferret pose the chase loop has actually received (live Ace centroid, or mid-exposure sample + USB + track when the pointer stands in). Prey XY is the **encoder** (Zaber `get_position`), as on a gantry.
 
 Chase policy is a **soft keep-away**: hold ~420 mm from the ferret, nudge slightly when pressed, reel back in when too far (so the hunt stays alive), and steer inward near edges/corners. Continuous `move_velocity` only — no discrete flees.
 
@@ -39,7 +39,7 @@ PYTHONPATH=src pytest
 
 ## Real Zaber X-MCC
 
-The web hunt still drives the **ferret** from the mouse pointer (delayed Ace grab model). The **toy** is commanded through `ZaberGantry` (`move_velocity` / `home` / encoder `get_xy`). A live Basler Ace still needs an animal in the FOV, so the camera path stays simulated until then.
+The web hunt drives the **ferret** from a live Ace blob when `PREY_ACE=1` opens a camera (`LatestImageOnly` → centroid → `pos_mm = pos_px × GSD`). If the Ace is missing, it falls back to the mouse pointer (delayed grab model). The **toy** is commanded through `ZaberGantry` (`move_velocity` / `home` / encoder `get_xy`).
 
 | How to enable | What happens |
 |---|---|
@@ -64,7 +64,9 @@ Override the JSON with `PYLON_CAMERA_CONFIG` / `PREY_CAMERA_CONFIG`.
 
 ```bash
 pip install -e ".[pylon,zaber]"
-PREY_ACE=1 PREY_ZABER=1 PYTHONPATH=src python -m experiment.run --live
+PREY_ACE=1 PREY_ZABER=1 PYTHONPATH=src python -m simulation.web
 ```
 
-Missing Ace/X-MCC falls back to stubs so the loop still runs. `PREY_ACE_REQUIRE=1` / `PREY_ZABER_REQUIRE=1` fail instead. Optional `PYLON_SERIAL` selects the camera. The web sim still uses the pointer as a fake ferret.
+Same stack without the HUD: `python -m experiment.run --live`.
+
+Missing Ace/X-MCC falls back to the pointer delay model and `SimulatedGantry` so the loop still runs. `PREY_ACE_REQUIRE=1` / `PREY_ZABER_REQUIRE=1` fail instead. Optional `PYLON_SERIAL` selects the camera.

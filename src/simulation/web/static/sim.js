@@ -10,6 +10,7 @@ let pointerMm = null;
 
 ws.onmessage = (ev) => {
 	state = JSON.parse(ev.data);
+	syncHint(state);
 	draw();
 	renderHud();
 };
@@ -18,8 +19,18 @@ function sendJson(obj) {
 	if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
+function syncHint(s) {
+	const el = document.querySelector(".hint");
+	if (!el) return;
+	if (s.ferret_source === "ace") {
+		el.textContent = "Live Ace blob is the ferret. Pointer is ignored. Grey ghost is the chase pose. Toy is the Zaber encoder.";
+	}
+}
+
 canvas.addEventListener("mousemove", (e) => {
 	if (!state) return;
+	// Why: live Ace owns the ferret; pointer must not override the blob.
+	if (state.ferret_source === "ace") return;
 	const r = canvas.getBoundingClientRect();
 	const nx = (e.clientX - r.left) / r.width;
 	const ny = (e.clientY - r.top) / r.height;
@@ -115,6 +126,7 @@ function drawGhost() {
 
 function drawFerret() {
 	const f = state.ferret_true;
+	if (!f.valid) return;
 	const [x, y] = mmToPx(f.x_mm, f.y_mm);
 	ctx.fillStyle = "#e2b84a";
 	blob(x, y, 8);
@@ -168,7 +180,9 @@ function hudCamera(s) {
 	const c = s.camera;
 	return `
 		<h2>Basler / pylon</h2>
+		${row("ferret source", s.ferret_source === "ace" ? "live Ace blob" : "pointer delay model", s.ferret_source === "ace" ? "ok" : "")}
 		${row("model", c.model)}
+		${row("backend", c.backend || "sim", c.backend === "pylon" ? "ok" : "")}
 		${row("format", `${c.pixel_format} ${s.arena.width_px}×${s.arena.height_px}`)}
 		${row("fps cap", c.fps.toFixed(0))}
 		${row("exposure", c.exposure_us.toFixed(0) + " µs")}
@@ -201,7 +215,7 @@ function hudAnimals(s) {
 	const sc = s.scene;
 	return `
 		<h2>Ferret (camera detection)</h2>
-		${row("world pointer", fmtTrack(s.ferret_true))}
+		${row(s.ferret_source === "ace" ? "Ace track" : "world pointer", s.ferret_true.valid ? fmtTrack(s.ferret_true) : "not seen")}
 		${row("camera px→mm", fmtTrack(s.ferret_camera))}
 		${row("camera px", s.ferret_camera.valid ? `${s.ferret_camera.x_px.toFixed(0)}, ${s.ferret_camera.y_px.toFixed(0)} px` : "not seen")}
 		<h2>Toy (Zaber encoder)</h2>

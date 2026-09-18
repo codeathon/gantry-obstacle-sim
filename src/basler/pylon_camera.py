@@ -1,4 +1,4 @@
-"""pypylon InstantCamera grabber. Why: stub AceCamera stays for tests/web."""
+"""pypylon InstantCamera grabber. Why: stub AceCamera stays for tests and pointer fallback."""
 
 from __future__ import annotations
 
@@ -29,6 +29,11 @@ class PylonAceCamera:
 		self.backend = "pylon"
 		self.model = ACE_MODEL
 		self.timeout_ms = timeout_ms
+		self.GrabStrategy = GRAB_STRATEGY
+		self.PixelFormat = "Mono8"
+		self.delivered = 0
+		self.dropped = 0
+		self.last_grab_to_frame_ms = 0.0
 		self._injected = camera
 		self._pylon = pylon_mod
 		self._cam: object | None = None
@@ -70,9 +75,15 @@ class PylonAceCamera:
 			return None
 		grab = self._retrieve()
 		if grab is None:
+			self.dropped += 1
 			return None
 		try:
-			return self._frame_from_grab(grab)
+			frame = self._frame_from_grab(grab)
+			if frame is None:
+				self.dropped += 1
+			else:
+				self.delivered += 1
+			return frame
 		finally:
 			_call(grab, "Release")
 

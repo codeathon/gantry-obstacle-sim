@@ -1,4 +1,4 @@
-"""FastAPI web sim: mouse is the ferret, prey is the Zaber carriage."""
+"""FastAPI web sim: Ace ferret when present, else pointer; prey is Zaber."""
 
 from __future__ import annotations
 

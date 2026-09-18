@@ -36,6 +36,8 @@ class SimulatedPylonCamera:
 		self.Width = timing.width_px
 		self.Height = timing.height_px
 		self.GrabStrategy = "LatestImageOnly"
+		# Why: HuntSim treats backend=="pylon" as a live Ace; this is the delay model.
+		self.backend = "sim"
 		self._next_t0 = 0.0
 		self._index = 0
 		self._pending: deque[_PendingGrab] = deque()
