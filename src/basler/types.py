@@ -16,3 +16,6 @@ class CameraFrame:
 	height_px: int = 0
 	# Why: pixels stay optional so stubs need no numpy yet.
 	pixels: object | None = None
+	# Why: blob centroid in camera pixels — pipeline maps px→mm like pylon-track.
+	ferret_x_px: float | None = None
+	ferret_y_px: float | None = None

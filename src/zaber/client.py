@@ -43,6 +43,9 @@ class ZaberGantry:
 		# Why: HUD and stale-stop use encoder speed, not commanded speed.
 		return self._vx, self._vy
 
+	def is_busy(self) -> bool:
+		return (self._vx * self._vx + self._vy * self._vy) ** 0.5 > 1.0
+
 	def move_absolute(
 		self,
 		x_mm: float,

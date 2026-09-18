@@ -18,6 +18,8 @@ class Gantry(Protocol):
 
 	def get_velocity(self) -> tuple[float, float]: ...
 
+	def is_busy(self) -> bool: ...
+
 	def move_absolute(
 		self,
 		x_mm: float,

@@ -1,7 +1,6 @@
 """Scene packet matching pylon-track TrackingFrame (mm, host_time_ns).
 
-Why a stub copy: do not move simulation/tracking_frame.py this pass so the
-web sim keeps importing from simulation.
+Why here: chase and sim both import this so prey/ferret units stay one type.
 """
 
 from __future__ import annotations
@@ -23,6 +22,9 @@ class TrackState:
 	speed_mm_s: float = 0.0
 	direction_deg: float = 0.0
 	valid: bool = False
+	# Why: camera detections live in pixels; mm is GSD times this, as in pylon-track.
+	x_px: float = 0.0
+	y_px: float = 0.0
 
 
 @dataclass

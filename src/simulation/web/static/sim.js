@@ -199,10 +199,11 @@ function hudZaber(s) {
 function hudAnimals(s) {
 	const sc = s.scene;
 	return `
-		<h2>Ferret (pointer / camera)</h2>
-		${row("true", fmtTrack(s.ferret_true))}
-		${row("camera seen", fmtTrack(s.ferret_camera))}
-		<h2>Prey (gantry encoder)</h2>
+		<h2>Ferret (camera detection)</h2>
+		${row("world pointer", fmtTrack(s.ferret_true))}
+		${row("camera px→mm", fmtTrack(s.ferret_camera))}
+		${row("camera px", s.ferret_camera.valid ? `${s.ferret_camera.x_px.toFixed(0)}, ${s.ferret_camera.y_px.toFixed(0)} px` : "not seen")}
+		<h2>Toy (Zaber encoder)</h2>
 		${row("state", fmtTrack(s.prey))}
 		${row("gap", sc.distance_mm.toFixed(0) + " mm")}
 		${row("bearing", sc.bearing_deg.toFixed(0) + "°")}

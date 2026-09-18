@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from chase.config import ChasePolicyConfig
+
 
 def _default_config_path() -> Path:
 	here = Path(__file__).resolve()
@@ -52,27 +54,6 @@ class CameraTiming:
 
 
 @dataclass(frozen=True)
-class ChasePolicyConfig:
-	"""Soft keep-away gains. Speeds stay low so the chase stays playable."""
-
-	preferred_gap_mm: float
-	min_gap_mm: float
-	max_pull_mm: float
-	away_gain: float
-	toward_gain: float
-	lateral_gain: float
-	wall_margin_mm: float
-	wall_gain: float
-	corner_gain: float
-	velocity_gain_s: float
-	max_engage_speed_mm_s: float
-	# Kept for HUD rings / older fields; not used for discrete flees anymore.
-	cone_half_angle_deg: float
-	threat_distance_mm: float
-	creep_distance_mm: float
-
-
-@dataclass(frozen=True)
 class ZaberConfig:
 	command_rtt_ms: float
 	max_speed_mm_s: float
@@ -90,6 +71,8 @@ class SimConfig:
 	control_period_ms: int
 	stale_frame_ms: float
 	trial_timeout_s: float
+	# Why: open_gantry(cfg) can build SimulatedGantry without a serial port.
+	fake: bool = True
 
 
 def load_sim_config(path: Path | None = None) -> SimConfig:

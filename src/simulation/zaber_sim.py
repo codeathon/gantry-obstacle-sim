@@ -75,6 +75,10 @@ class SimulatedGantry:
 		self.calls: deque[ApiCall] = deque(maxlen=12)
 		self.last_rtt_ms = rtt_ms
 		self.t_s = 0.0
+		# Why: Gantry.home returns to spawn, not (0,0) — sim.json home is arena center.
+		self._home_x = x_mm
+		self._home_y = y_mm
+		self.connected = False
 
 	def step(self, dt_s: float, t_s: float) -> None:
 		self.t_s = t_s
@@ -99,21 +103,48 @@ class SimulatedGantry:
 	def get_position(self) -> tuple[float, float]:
 		return self.x_mm, self.y_mm
 
+	def get_xy(self) -> tuple[float, float]:
+		# Why: Gantry protocol name; chase_feed must read encoder not vision.
+		return self.get_position()
+
 	def get_velocity(self) -> tuple[float, float]:
 		return self.vx_mm_s, self.vy_mm_s
+
+	def connect(self) -> None:
+		# Why: same call site as ZaberGantry; sim has no USB CDC.
+		self._log("connect", "sim")
+		self.connected = True
+
+	def close(self) -> None:
+		self._log("close", "sim")
+		self.connected = False
+
+	def home(self) -> None:
+		# Why: Experiment.start homes; keep the carriage at configured home XY.
+		self._log("home", f"p=({self._home_x:.1f},{self._home_y:.1f})")
+		self.x_mm = self._home_x
+		self.y_mm = self._home_y
+		self.vx_mm_s = self.vy_mm_s = 0.0
+		self._cmd_vx = self._cmd_vy = 0.0
+		self._mode = "idle"
+		self._pending.clear()
 
 	def move_absolute(
 		self,
 		x_mm: float,
 		y_mm: float,
+		speed_mm_s: float = 0.0,
+		accel_mm_s2: float = 0.0,
+		wait_until_idle: bool = False,
 		*,
-		wait_until_idle: bool = True,
 		velocity: float = 0.0,
 		acceleration: float = 0.0,
 	) -> None:
 		# Why: wait_until_idle=False is the live hunt path (NI preempts prior move).
-		speed = velocity if velocity > 0 else self.max_speed
-		accel = acceleration if acceleration > 0 else self.max_accel
+		speed = speed_mm_s or velocity
+		accel = accel_mm_s2 or acceleration
+		speed = speed if speed > 0 else self.max_speed
+		accel = accel if accel > 0 else self.max_accel
 		self._log("move_absolute", f"p=({x_mm:.1f},{y_mm:.1f}) v={speed:.0f} wait={wait_until_idle}")
 		self._pending.append(
 			_Pending(self.t_s + self.rtt_s, "abs", x=x_mm, y=y_mm, speed=speed, accel=accel)
