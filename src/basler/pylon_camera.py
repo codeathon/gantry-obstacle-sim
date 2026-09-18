@@ -23,7 +23,7 @@ class PylonAceCamera:
 		*,
 		camera: object | None = None,
 		pylon_mod: object | None = None,
-		timeout_ms: int = 500,
+		timeout_ms: int = 20,
 	) -> None:
 		self.settings = settings if settings is not None else load_camera_config()
 		self.backend = "pylon"

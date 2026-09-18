@@ -33,6 +33,11 @@ class ChaseController:
 		self.last_decision_ms = 0.0
 		self.stale_stops = 0
 
+	def set_workspace(self, width_mm: float, height_mm: float) -> None:
+		# Why: live Ace AOI may differ from sim.json after configure.
+		self._w = width_mm
+		self._h = height_mm
+
 	def submit_frame(self, frame: TrackingFrame) -> None:
 		# Why: camera thread copies latest frame under a lock, like pylon-track.
 		self._latest = frame

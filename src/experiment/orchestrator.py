@@ -43,6 +43,7 @@ class Experiment:
 		self._gantry.home()
 		self._grabber.open()
 		self._grabber.configure()
+		self._apply_live_fov()
 		self._grabber.start_grabbing()
 		self._running = True
 
@@ -79,11 +80,48 @@ class Experiment:
 	def _ingest_camera(self, cam_frame) -> TrackingFrame | None:
 		if cam_frame is None:
 			return None
-		scene = self._pipeline.process(cam_frame, self.trial.phase)
+		prey_xy = self._gantry.get_xy()
+		scene = self._pipeline.process(cam_frame, self.trial.phase, prey_xy)
 		self._stamp_encoder_prey(scene)
 		self.chase.submit_frame(scene)
 		self.last_scene = scene
 		return scene
+
+	def run_live(self, duration_s: float = 0.0, auto_start: bool = True) -> None:
+		# Why: pylon-track chase_feed is a tight loop, not a disk dump.
+		self.start()
+		if auto_start:
+			self.trial.on_operator_key("s")
+		t0 = time.perf_counter()
+		try:
+			self._live_loop(duration_s, t0)
+		finally:
+			self.shutdown()
+
+	def _live_loop(self, duration_s: float, t0: float) -> None:
+		# Why: 5 ms yield is pylon-track kMainLoopSleepMs; LatestImageOnly still wins.
+		last = t0
+		while self._running:
+			now = time.perf_counter()
+			if duration_s > 0 and now - t0 >= duration_s:
+				return
+			self._step_sim_gantry(now - last, now - t0)
+			last = now
+			self.chase_feed_loop()
+			time.sleep(0.005)
+
+	def _step_sim_gantry(self, dt_s: float, t_s: float) -> None:
+		# Why: firmware integrates; SimulatedGantry still needs wall-clock steps.
+		step = getattr(self._gantry, "step", None)
+		if callable(step):
+			step(dt_s, t_s)
+
+	def _apply_live_fov(self) -> None:
+		fov_fn = getattr(self._grabber, "fov", None)
+		if not callable(fov_fn):
+			return
+		fov = fov_fn()
+		self.chase.set_workspace(fov.width_mm, fov.height_mm)
 
 	def _poll_time(self, t_s: float | None, cam_frame) -> float:
 		if t_s is not None:

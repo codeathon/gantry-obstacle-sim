@@ -170,13 +170,11 @@ def test_want_ace_env(monkeypatch) -> None:
 	assert want_ace()
 
 
-def test_grab_frames_writes_pgm_and_fov(tmp_path: Path) -> None:
-	written = grab_main(["--count", "1", "--out", str(tmp_path)])
-	assert len(written) == 1
-	assert written[0].read_bytes().startswith(b"P5")
-	fov_txt = (tmp_path / "fov.json").read_text(encoding="utf-8")
-	assert "1987.2" in fov_txt or "width_px" in fov_txt
-	assert '"backend": "stub"' in fov_txt
+def test_grab_frames_runs_live_hunt() -> None:
+	# Why: grab_frames is the pylon-track loop, not a PGM dump.
+	exp = grab_main(["--duration", "0.05"])
+	assert exp.last_scene is not None
+	assert exp.last_scene.prey.valid
 
 
 def test_save_pgm_black_when_no_pixels(tmp_path: Path) -> None:
