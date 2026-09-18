@@ -187,6 +187,7 @@ function hudZaber(s) {
 	const z = s.zaber;
 	return `
 		<h2>Zaber API</h2>
+		${row("backend", z.backend || "sim", z.backend === "hardware" ? "ok" : "")}
 		${row("link", z.comm + " RTT " + z.rtt_ms.toFixed(1) + " ms")}
 		${row("busy", String(z.busy), z.busy ? "warn" : "ok")}
 		${row("position", `${z.x_mm.toFixed(1)}, ${z.y_mm.toFixed(1)} mm`)}

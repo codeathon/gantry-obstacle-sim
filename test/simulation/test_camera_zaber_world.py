@@ -63,3 +63,19 @@ def test_shared_chase_controller_and_fake_gantry() -> None:
 	g = open_gantry(sim.cfg)
 	assert g.get_xy() == (sim.cfg.zaber.home_x_mm, sim.cfg.zaber.home_y_mm)
 	g.close()
+
+
+def test_huntsim_toy_backend_is_sim_by_default() -> None:
+	# Why: no X-MCC in CI; ferret stays on the delayed camera path either way.
+	sim = HuntSim()
+	assert sim.gantry.backend == "sim"
+	snap = sim.snapshot()
+	assert snap["zaber"]["backend"] == "sim"
+	assert any(c["name"] == "home" for c in snap["zaber"]["api_calls"])
+
+
+def test_huntsim_falls_back_when_prey_zaber_set(monkeypatch) -> None:
+	# Why: web hunt must still run if the toy stage is unplugged.
+	monkeypatch.setenv("PREY_ZABER", "1")
+	sim = HuntSim()
+	assert sim.gantry.backend == "sim"

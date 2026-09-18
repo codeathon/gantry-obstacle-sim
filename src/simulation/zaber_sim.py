@@ -79,6 +79,8 @@ class SimulatedGantry:
 		self._home_x = x_mm
 		self._home_y = y_mm
 		self.connected = False
+		# Why: HUD distinguishes firmware X-MCC from this trapezoid stand-in.
+		self.backend = "sim"
 
 	def step(self, dt_s: float, t_s: float) -> None:
 		self.t_s = t_s
@@ -159,6 +161,10 @@ class SimulatedGantry:
 	def stop(self) -> None:
 		self._log("stop", "decelerate to 0")
 		self._pending.append(_Pending(self.t_s + self.rtt_s, "stop"))
+
+	def api_log(self) -> list[ApiCall]:
+		# Why: HuntSim snapshot uses the same helper as ZaberGantry.
+		return list(self.calls)[:8]
 
 	def _log(self, name: str, detail: str) -> None:
 		self.calls.appendleft(ApiCall(self.t_s, name, detail, self.rtt_s * 1e3))

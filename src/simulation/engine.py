@@ -8,9 +8,9 @@ from dataclasses import asdict, dataclass
 from experiment.orchestrator import Experiment
 from simulation.config import SimConfig, load_sim_config
 from simulation.pylon_sim import SimulatedPylonCamera
-from simulation.zaber_sim import SimulatedGantry
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackState, TrialPhase
+from zaber.factory import open_gantry
 
 
 @dataclass
@@ -23,20 +23,12 @@ class HuntSim:
 	def __init__(self, cfg: SimConfig | None = None) -> None:
 		self.cfg = cfg or load_sim_config()
 		cam = self.cfg.camera
-		zb = self.cfg.zaber
 		self.t_s = 0.0
 		self.true_ferret = TrackState(cam.width_mm * 0.25, cam.height_mm * 0.5, 0, 0, True)
 		self._prev_fx = self.true_ferret.x_mm
 		self._prev_fy = self.true_ferret.y_mm
-		self.gantry = SimulatedGantry(
-			zb.home_x_mm,
-			zb.home_y_mm,
-			zb.max_speed_mm_s,
-			zb.max_accel_mm_s2,
-			zb.command_rtt_ms,
-			cam.width_mm,
-			cam.height_mm,
-		)
+		# Why: SimulatedGantry unless PREY_ZABER / use_hardware finds an X-MCC.
+		self.gantry = open_gantry(self.cfg)
 		self.camera = SimulatedPylonCamera(cam)
 		self.exp = self._bind_experiment(cam)
 		self.last_frame_index = -1
@@ -87,8 +79,10 @@ class HuntSim:
 	def step(self, dt_s: float) -> None:
 		self._update_ferret_kinematics(dt_s)
 		self.t_s += dt_s
-		# Why: toy physics only advance after Zaber API commands (RTT then trapezoid).
-		self.gantry.step(dt_s, self.t_s)
+		# Why: firmware integrates; SimulatedGantry.step is the trapezoid stand-in.
+		step_g = getattr(self.gantry, "step", None)
+		if callable(step_g):
+			step_g(dt_s, self.t_s)
 		self.camera.tick(self.t_s, self.true_ferret)
 		scene = self.exp.chase_feed_loop(self.t_s)
 		if scene is not None:
@@ -137,7 +131,8 @@ class HuntSim:
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
 		return {
 			"comm": self.cfg.zaber.comm,
-			"rtt_ms": self.gantry.last_rtt_ms,
+			"backend": getattr(self.gantry, "backend", "sim"),
+			"rtt_ms": float(getattr(self.gantry, "last_rtt_ms", 0.0)),
 			"busy": self.gantry.is_busy(),
 			"x_mm": px,
 			"y_mm": py,
@@ -147,7 +142,7 @@ class HuntSim:
 			"heading_deg": heading,
 			"max_speed_mm_s": self.cfg.zaber.max_speed_mm_s,
 			"max_accel_mm_s2": self.cfg.zaber.max_accel_mm_s2,
-			"api_calls": [asdict(c) for c in list(self.gantry.calls)[:8]],
+			"api_calls": _api_call_dicts(self.gantry),
 		}
 
 	def _decision_dict(self) -> dict:
@@ -215,3 +210,11 @@ def _track_dict(t: TrackState) -> dict:
 		"direction_deg": t.direction_deg,
 		"valid": t.valid,
 	}
+
+
+def _api_call_dicts(gantry) -> list[dict]:
+	# Why: stub calls are names; sim/hardware expose ApiCall rows via api_log.
+	log = getattr(gantry, "api_log", None)
+	if callable(log):
+		return [asdict(c) for c in log()]
+	return []

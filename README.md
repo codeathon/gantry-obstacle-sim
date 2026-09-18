@@ -36,3 +36,20 @@ Open http://127.0.0.1:8765 — **S** start trial, **E** end, **R** reset.
 ```bash
 PYTHONPATH=src pytest
 ```
+
+## Real Zaber X-MCC
+
+The web hunt still drives the **ferret** from the mouse pointer (delayed Ace grab model). The **toy** is commanded through `ZaberGantry` (`move_velocity` / `home` / encoder `get_xy`). A live Basler Ace still needs an animal in the FOV, so the camera path stays simulated until then.
+
+| How to enable | What happens |
+|---|---|
+| `PREY_ZABER=1` or `ZABER_PORT=/dev/ttyUSB0` or `config/sim.json` `zaber.use_hardware` | Open USB CDC, `detect_devices`, optional lockstep X |
+| Missing `zaber-motion` wheel or unplugged X-MCC | Fall back to `SimulatedGantry` (web hunt still runs) |
+| `PREY_ZABER_REQUIRE=1` | Raise instead of falling back |
+
+```bash
+pip install -e ".[zaber]"
+PREY_ZABER=1 PYTHONPATH=src python -m simulation.web
+```
+
+Optional JSON keys under `zaber`: `port`, `device_index`, `x_axis` (1), `y_axis` (2), `lockstep_group` (0 = no lockstep), `poll_min_ms` (encoder cache so the 1 ms sim loop does not hammer serial).
