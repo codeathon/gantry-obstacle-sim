@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass
 class CameraSettings:
-	# Why: same fields as pylon-track CameraSettings / camera_config.json.
+	# Why: dataclass defaults match camera_settings.h; AceCamera loads camera_config.json.
 	pixel_format: str = "Mono8"
 	width: int = 1920
 	height: int = 960

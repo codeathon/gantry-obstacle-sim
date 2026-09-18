@@ -11,7 +11,7 @@ The ferret is **your mouse pointer**. The prey toy is the gantry, commanded thro
 | Stage | Source | Default |
 |---|---|---|
 | Sensor | a2A1920-160umPRO, Mono8 1920×1200, 1.2 m, 4 mm, GSD 1.035 mm/px | FOV 1987 × 1242 mm |
-| Exposure | `camera_config.json` | 3000 µs |
+| Exposure | `config/camera_config.json` (pylon-track) | 3000 µs |
 | Frame rate | pylon-track | 200 fps |
 | USB3 transfer | model of 1920×1200 Mono8 | 1.5 ms |
 | Tracking | MOG2 + associator budget | 1.2 ms |
@@ -53,3 +53,9 @@ PREY_ZABER=1 PYTHONPATH=src python -m simulation.web
 ```
 
 Optional JSON keys under `zaber`: `port`, `device_index`, `x_axis` (1), `y_axis` (2), `lockstep_group` (0 = no lockstep), `poll_min_ms` (encoder cache so the 1 ms sim loop does not hammer serial).
+
+## Basler Ace 2 (pylon-track)
+
+GenICam AOI, exposure, gain, and fps are copied from [pylon-track `camera_config.json`](https://github.com/codeathon/pylon-track/blob/main/src/camera/camera_config.json) into `config/camera_config.json`. Hunt sim FOV is that AOI × GSD (`ferret_tracker.h`: 1.035 mm/px at 1.2 m, 4 mm). C++ `CameraSettings` struct defaults (1920×960 crop, 5000 µs) stay as dataclass defaults; `AceCamera()` and `load_sim_config()` load the JSON.
+
+Override the JSON with `PYLON_CAMERA_CONFIG` / `PREY_CAMERA_CONFIG`. A live Ace still needs an animal in the FOV — this repo still uses the delayed pixel model until then.

@@ -1,17 +1,10 @@
 {
-	"_comment": "Soft keep-away hunt: hold preferred gap, nudge slightly, dodge walls. Camera timings still from pylon-track.",
+	"_comment": "Soft keep-away hunt. Ace AOI/exposure/fps come from camera_config.json (pylon-track).",
 	"camera": {
 		"model": "a2A1920-160umPRO",
-		"pixel_format": "Mono8",
-		"width_px": 1920,
-		"height_px": 1200,
 		"gsd_mm_per_px": 1.035,
 		"mount_height_mm": 1200,
 		"lens_mm": 4,
-		"exposure_us": 3000,
-		"frame_rate_fps": 200,
-		"gain_db": 6.0,
-		"trigger_mode": "Off",
 		"usb_transfer_ms": 1.5,
 		"tracking_pipeline_ms": 1.2,
 		"grab_strategy": "LatestImageOnly"

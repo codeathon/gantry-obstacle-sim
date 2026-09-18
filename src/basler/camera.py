@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from basler.config import configure_camera
+from basler.load import load_camera_config
 from basler.pylon_api import (
 	StubPylonCamera,
 	instant_camera_close,
@@ -30,8 +31,8 @@ def open_ace(serial_or_index: str | int | None = None) -> StubPylonCamera:
 
 
 def configure_ace(cam: StubPylonCamera, settings: CameraSettings | None = None) -> None:
-	# Why: Mono8, AOI, exposure, fps, LatestImageOnly — pylon-track camera_config.
-	configure_camera(cam, settings or CameraSettings())
+	# Why: Mono8, AOI, exposure, fps from pylon-track camera_config.json.
+	configure_camera(cam, settings if settings is not None else load_camera_config())
 
 
 def make_camera_frame(grab: dict, frame_index: int, host_time_ns: int) -> CameraFrame:
@@ -50,7 +51,8 @@ class AceCamera:
 	"""Owns stub InstantCamera; experiment never touches Pylon nodes."""
 
 	def __init__(self, settings: CameraSettings | None = None) -> None:
-		self.settings = settings or CameraSettings()
+		# Why: C++ struct defaults are a 960-tall crop; the Ace JSON is full frame.
+		self.settings = settings if settings is not None else load_camera_config()
 		self._cam: StubPylonCamera | None = None
 
 	def open(self) -> None:

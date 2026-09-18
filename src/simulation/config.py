@@ -99,17 +99,22 @@ def load_sim_config(path: Path | None = None) -> SimConfig:
 
 
 def _camera_timing(cam: dict) -> CameraTiming:
+	# Why: Ace AOI/exposure/fps come from pylon-track JSON so the two files cannot drift.
+	from basler.load import load_camera_config
+	from basler.optics import ACE_MODEL, GSD_MM_PX, LENS_MM, MOUNT_HEIGHT_MM
+
+	ace = load_camera_config()
 	return CameraTiming(
-		model=cam["model"],
-		width_px=int(cam["width_px"]),
-		height_px=int(cam["height_px"]),
-		gsd_mm_per_px=float(cam["gsd_mm_per_px"]),
-		exposure_us=float(cam["exposure_us"]),
-		frame_rate_fps=float(cam["frame_rate_fps"]),
+		model=str(cam.get("model") or ACE_MODEL),
+		width_px=ace.width,
+		height_px=ace.height,
+		gsd_mm_per_px=float(cam.get("gsd_mm_per_px", GSD_MM_PX)),
+		exposure_us=float(ace.exposure_time_us),
+		frame_rate_fps=float(ace.frame_rate_fps),
 		usb_transfer_ms=float(cam["usb_transfer_ms"]),
 		tracking_pipeline_ms=float(cam["tracking_pipeline_ms"]),
-		mount_height_mm=float(cam["mount_height_mm"]),
-		lens_mm=float(cam["lens_mm"]),
+		mount_height_mm=float(cam.get("mount_height_mm", MOUNT_HEIGHT_MM)),
+		lens_mm=float(cam.get("lens_mm", LENS_MM)),
 	)
 
 
