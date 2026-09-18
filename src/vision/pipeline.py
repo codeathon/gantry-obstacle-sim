@@ -9,4 +9,10 @@ from vision.tracking_frame import TrackingFrame, TrialPhase
 class TrackingPipeline:
 	def process(self, camera_frame: CameraFrame, trial: TrialPhase) -> TrackingFrame:
 		# Why: CameraFrame in, TrackingFrame out — no Pylon or Zaber types.
-		raise NotImplementedError("MOG2 + associator → TrackingFrame")
+		# Stub copies timestamps only; ferret/prey stay invalid until real MOG2.
+		return TrackingFrame(
+			frame_index=camera_frame.frame_index,
+			camera_ts_ticks=camera_frame.camera_ts_ns,
+			host_time_ns=camera_frame.host_time_ns,
+			trial_phase=trial,
+		)

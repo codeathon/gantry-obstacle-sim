@@ -11,4 +11,10 @@ class TrialStateMachine:
 
 	def on_operator_key(self, key: str) -> TrialPhase:
 		# Why: s start, e end, r reset — same keys as the web sim and pylon-track.
-		raise NotImplementedError("s/e/r → TrialPhase")
+		if key == "s":
+			self.phase = TrialPhase.running
+		elif key == "e":
+			self.phase = TrialPhase.ended
+		elif key == "r":
+			self.phase = TrialPhase.warmup
+		return self.phase

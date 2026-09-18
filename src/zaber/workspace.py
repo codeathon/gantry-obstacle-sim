@@ -12,7 +12,10 @@ def clip_xy(
 	y_max: float,
 ) -> tuple[float, float]:
 	# Why: keep commands inside the arena so the carriage never hits hard limits.
-	raise NotImplementedError("clip x,y to workspace rectangle")
+	return (
+		min(max(x_mm, x_min), x_max),
+		min(max(y_mm, y_min), y_max),
+	)
 
 
 def point_in_workspace(
@@ -24,4 +27,4 @@ def point_in_workspace(
 	y_max: float,
 ) -> bool:
 	# Why: coverage/smoke scripts skip points outside the hunt rectangle.
-	raise NotImplementedError("workspace membership")
+	return x_min <= x_mm <= x_max and y_min <= y_mm <= y_max

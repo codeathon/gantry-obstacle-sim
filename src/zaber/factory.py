@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from zaber.client import ZaberGantry
 from zaber.protocol import Gantry
 
 
-def open_gantry(cfg: object) -> Gantry:
-	# Why: cfg.fake → SimulatedGantry later; else ZaberGantry serial.
-	raise NotImplementedError("open fake vs serial gantry")
+def open_gantry(cfg: object = None) -> Gantry:
+	# Why: later cfg.fake → SimulatedGantry; stub always returns in-memory XY.
+	del cfg
+	gantry = ZaberGantry()
+	gantry.connect()
+	return gantry
