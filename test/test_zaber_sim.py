@@ -1,6 +1,6 @@
 """Zaber-shaped API: RTT then trapezoid to an absolute point."""
 
-from prey_gantry.zaber_sim import SimulatedGantry
+from simulation.zaber_sim import SimulatedGantry
 
 
 def test_move_absolute_arrives_after_rtt_and_travel():

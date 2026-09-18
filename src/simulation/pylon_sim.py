@@ -9,14 +9,14 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 
-from prey_gantry.config import CameraTiming
-from prey_gantry.tracking_frame import (
+from simulation.config import CameraTiming
+from simulation.tracking_frame import (
 	TrackingFrame,
 	TrackingQuality,
 	TrackState,
 	TrialPhase,
 )
-from prey_gantry.chase_policy import fill_tracking_derived
+from simulation.chase_policy import fill_tracking_derived
 
 
 @dataclass

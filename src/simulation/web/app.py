@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from prey_gantry.engine import HuntSim
+from simulation.engine import HuntSim
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -73,7 +73,7 @@ def main() -> None:
 	import uvicorn
 
 	uvicorn.run(
-		"prey_gantry.web.app:create_app",
+		"simulation.web.app:create_app",
 		factory=True,
 		host="0.0.0.0",
 		port=8765,

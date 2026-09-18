@@ -14,7 +14,7 @@ zaber = ["zaber-motion>=7.0"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-prey-gantry-sim = "prey_gantry.web.app:main"
+prey-gantry-sim = "simulation.web.app:main"
 
 [build-system]
 requires = ["setuptools>=69"]
@@ -24,7 +24,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-prey_gantry = ["web/static/*"]
+simulation = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
