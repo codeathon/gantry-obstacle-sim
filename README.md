@@ -59,3 +59,12 @@ Optional JSON keys under `zaber`: `port`, `device_index`, `x_axis` (1), `y_axis`
 GenICam AOI, exposure, gain, and fps are copied from [pylon-track `camera_config.json`](https://github.com/codeathon/pylon-track/blob/main/src/camera/camera_config.json) into `config/camera_config.json`. Hunt sim FOV is that AOI × GSD (`ferret_tracker.h`: 1.035 mm/px at 1.2 m, 4 mm). C++ `CameraSettings` struct defaults (1920×960 crop, 5000 µs) stay as dataclass defaults; `AceCamera()` and `load_sim_config()` load the JSON.
 
 Override the JSON with `PYLON_CAMERA_CONFIG` / `PREY_CAMERA_CONFIG`. A live Ace still needs an animal in the FOV — this repo still uses the delayed pixel model until then.
+
+To grab real Mono8 frames (mouse or ferret in the arena):
+
+```bash
+pip install -e ".[pylon]"
+PREY_ACE=1 PYTHONPATH=src python -m experiment.grab_frames --count 16 --out captures
+```
+
+`EnumerateDevices` + `StartGrabbing(LatestImageOnly)` + `RetrieveResult`. FOV is the live `Width`/`Height` × GSD (written to `captures/fov.json`). Missing pypylon or unplugged Ace falls back to the stub unless `PREY_ACE_REQUIRE=1`. Optional `PYLON_SERIAL` selects the camera.
