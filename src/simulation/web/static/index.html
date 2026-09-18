@@ -22,7 +22,7 @@
 	<main>
 		<section class="arena-wrap">
 			<canvas id="arena" width="960" height="600"></canvas>
-			<p class="hint">Move the pointer in the arena — that is the ferret. Grey ghost is what the camera has delivered (exposure + USB + track delay). Prey is the gantry carriage.</p>
+			<p class="hint">Pointer is the ferret in the arena. Chase only sees the Basler detection (grey ghost: pixels × GSD, delayed by exposure + USB + track). The toy is the Zaber carriage — placed with <code>home</code>, moved with <code>move_velocity</code>, pose from the encoder.</p>
 		</section>
 		<aside id="hud"></aside>
 	</main>

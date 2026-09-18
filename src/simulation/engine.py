@@ -5,12 +5,12 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
-from simulation.chase_controller import ChaseController
-from simulation.chase_policy import fill_tracking_derived
+from experiment.orchestrator import Experiment
 from simulation.config import SimConfig, load_sim_config
 from simulation.pylon_sim import SimulatedPylonCamera
-from simulation.tracking_frame import TrackState, TrialPhase
 from simulation.zaber_sim import SimulatedGantry
+from vision.pipeline import TrackingPipeline
+from vision.tracking_frame import TrackState, TrialPhase
 
 
 @dataclass
@@ -25,7 +25,6 @@ class HuntSim:
 		cam = self.cfg.camera
 		zb = self.cfg.zaber
 		self.t_s = 0.0
-		self.trial = TrialPhase.warmup
 		self.true_ferret = TrackState(cam.width_mm * 0.25, cam.height_mm * 0.5, 0, 0, True)
 		self._prev_fx = self.true_ferret.x_mm
 		self._prev_fy = self.true_ferret.y_mm
@@ -39,49 +38,61 @@ class HuntSim:
 			cam.height_mm,
 		)
 		self.camera = SimulatedPylonCamera(cam)
-		self.camera.start_grabbing()
-		self.controller = ChaseController(
-			self.gantry,
-			self.cfg.chase,
-			cam.width_mm,
-			cam.height_mm,
-			self.cfg.control_period_ms,
-			self.cfg.stale_frame_ms,
-		)
+		self.exp = self._bind_experiment(cam)
 		self.last_frame_index = -1
 
+	def _bind_experiment(self, cam) -> Experiment:
+		# Why: same Experiment chase_feed as hardware; sim only supplies fakes.
+		exp = Experiment(
+			self.gantry,
+			self.camera,
+			cfg=self.cfg.chase,
+			width_mm=cam.width_mm,
+			height_mm=cam.height_mm,
+			period_ms=self.cfg.control_period_ms,
+			stale_ms=self.cfg.stale_frame_ms,
+			pipeline=TrackingPipeline(cam.gsd_mm_per_px, cam.frame_rate_fps),
+		)
+		exp.start()
+		return exp
+
+	@property
+	def controller(self):
+		return self.exp.chase
+
+	@property
+	def trial(self) -> TrialPhase:
+		return self.exp.trial.phase
+
+	@trial.setter
+	def trial(self, phase: TrialPhase) -> None:
+		self.exp.trial.phase = phase
+
 	def set_pointer(self, x_mm: float, y_mm: float) -> None:
+		# Why: pointer is the animal in the arena; chase uses camera pixels, not this.
 		cam = self.cfg.camera
 		self.true_ferret.x_mm = min(max(x_mm, 0.0), cam.width_mm)
 		self.true_ferret.y_mm = min(max(y_mm, 0.0), cam.height_mm)
 
 	def set_trial(self, cmd: str) -> None:
 		if cmd == "start":
-			self.trial = TrialPhase.running
+			self.exp.on_operator_key("s")
 		elif cmd == "end":
-			self.trial = TrialPhase.ended
+			self.exp.on_operator_key("e")
 			self.gantry.stop()
 		elif cmd == "reset":
-			self.trial = TrialPhase.warmup
-			self.gantry.stop()
-			self.gantry.x_mm = self.cfg.zaber.home_x_mm
-			self.gantry.y_mm = self.cfg.zaber.home_y_mm
-			self.gantry.vx_mm_s = self.gantry.vy_mm_s = 0.0
+			self.exp.on_operator_key("r")
+			self.gantry.home()
 
 	def step(self, dt_s: float) -> None:
 		self._update_ferret_kinematics(dt_s)
 		self.t_s += dt_s
+		# Why: toy physics only advance after Zaber API commands (RTT then trapezoid).
 		self.gantry.step(dt_s, self.t_s)
-		prey = self._prey_track()
-		frame = self.camera.poll(self.t_s, self.true_ferret, prey, self.trial)
-		if frame is not None:
-			# Prey in the chase loop uses encoder (gantry), ferret is camera-delayed.
-			frame.prey = prey
-			frame.prey.valid = True
-			fill_tracking_derived(frame)
-			self.controller.submit_frame(frame)
-			self.last_frame_index = frame.frame_index
-		self.controller.poll(self.t_s)
+		self.camera.tick(self.t_s, self.true_ferret)
+		scene = self.exp.chase_feed_loop(self.t_s)
+		if scene is not None:
+			self.last_frame_index = scene.frame_index
 
 	def snapshot(self) -> dict:
 		# Why split: HUD payload is large; keep each builder under 45 lines.
@@ -120,7 +131,7 @@ class HuntSim:
 		}
 
 	def _zaber_dict(self) -> dict:
-		px, py = self.gantry.get_position()
+		px, py = self.gantry.get_xy()
 		vx, vy = self.gantry.get_velocity()
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
@@ -159,7 +170,7 @@ class HuntSim:
 
 	def _prey_track(self) -> TrackState:
 		vx, vy = self.gantry.get_velocity()
-		x, y = self.gantry.get_position()
+		x, y = self.gantry.get_xy()
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
 		return TrackState(x, y, spd, heading, True)
@@ -198,6 +209,8 @@ def _track_dict(t: TrackState) -> dict:
 	return {
 		"x_mm": t.x_mm,
 		"y_mm": t.y_mm,
+		"x_px": t.x_px,
+		"y_px": t.y_px,
 		"speed_mm_s": t.speed_mm_s,
 		"direction_deg": t.direction_deg,
 		"valid": t.valid,
