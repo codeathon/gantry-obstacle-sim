@@ -56,6 +56,7 @@ class ZaberGantry:
 		self._note("connect", self.settings.port or "stub")
 		if self._x_axis is not None:
 			self.connected = True
+			self._apply_device_limits()
 			self._refresh(force=True)
 			return
 		if self._use_serial:
@@ -201,6 +202,7 @@ class ZaberGantry:
 		self._x_axis, self._y_axis = _bind_axes(device, self.settings)
 		self.settings.port = port
 		self.connected = True
+		self._apply_device_limits()
 		self._refresh(force=True)
 
 	def _home_hardware(self) -> None:
@@ -209,11 +211,26 @@ class ZaberGantry:
 		if not _is_homed(self._y_axis):
 			self._y_axis.home()
 		self.homed = True
-		self.move_absolute(
-			self.settings.home_x_mm,
-			self.settings.home_y_mm,
-			wait_until_idle=True,
-		)
+		self._apply_device_limits()
+		x_mm, y_mm = self._reachable_home()
+		self.move_absolute(x_mm, y_mm, wait_until_idle=True)
+
+	def _reachable_home(self) -> tuple[float, float]:
+		s = self.settings
+		if s.x_min <= s.home_x_mm <= s.x_max and s.y_min <= s.home_y_mm <= s.y_max:
+			return s.home_x_mm, s.home_y_mm
+		# Why: sim.json spawn is Ace FOV center (~1 m); X-MCC travel is smaller.
+		return (s.x_min + s.x_max) * 0.5, (s.y_min + s.y_max) * 0.5
+
+	def _apply_device_limits(self) -> None:
+		if self._x_axis is None or self._y_axis is None:
+			return
+		s = self.settings
+		s.x_min, s.x_max = _travel_mm(self._x_axis, self._units, s.x_min, s.x_max)
+		s.y_min, s.y_max = _travel_mm(self._y_axis, self._units, s.y_min, s.y_max)
+		vx = _maxspeed_mm_s(self._x_axis, self._units, s.max_speed_mm_s)
+		vy = _maxspeed_mm_s(self._y_axis, self._units, s.max_speed_mm_s)
+		s.max_speed_mm_s = min(s.max_speed_mm_s, vx, vy)
 
 	def _move_abs_hw(
 		self, x_mm: float, y_mm: float, speed: float, accel: float, wait: bool
@@ -275,12 +292,89 @@ class ZaberGantry:
 
 
 def _bind_axes(device, settings: HardwareSettings) -> tuple[object, object]:
-	if settings.lockstep_group > 0:
-		x_ax = device.get_lockstep(settings.lockstep_group)
-	else:
-		x_ax = device.get_axis(settings.x_axis)
-	y_ax = device.get_axis(settings.y_axis)
-	return x_ax, y_ax
+	group = settings.lockstep_group
+	if group <= 0:
+		group = _first_enabled_lockstep(device)
+		if group > 0:
+			settings.lockstep_group = group
+	if group > 0:
+		x_ax = device.get_lockstep(group)
+		y_idx = _y_axis_for_lockstep(device, x_ax, settings.y_axis)
+		settings.y_axis = y_idx
+		return x_ax, device.get_axis(y_idx)
+	return device.get_axis(settings.x_axis), device.get_axis(settings.y_axis)
+
+
+def _first_enabled_lockstep(device) -> int:
+	for i in range(1, 4):
+		try:
+			ls = device.get_lockstep(i)
+			if bool(ls.is_enabled()):
+				return i
+		except Exception:
+			continue
+	return 0
+
+
+def _y_axis_for_lockstep(device, lockstep, y_idx: int) -> int:
+	# Why: XXY lockstep 1 is axes 1+2; commanding axis 2 as Y is LOCKSTEP/BADDATA.
+	nums: set[int] = set()
+	get_nums = getattr(lockstep, "get_axis_numbers", None)
+	if callable(get_nums):
+		try:
+			nums = {int(n) for n in get_nums()}
+		except Exception:
+			nums = set()
+	if y_idx not in nums:
+		return y_idx
+	count = int(getattr(device, "axis_count", 3) or 3)
+	for i in range(1, count + 1):
+		if i in nums:
+			continue
+		try:
+			device.get_axis(i)
+			return i
+		except Exception:
+			continue
+	return y_idx
+
+
+def _travel_mm(axis, units, dmin: float, dmax: float) -> tuple[float, float]:
+	lo = _setting(axis, "limit.min", units, "LENGTH_MILLIMETRES", dmin)
+	hi = _setting(axis, "limit.max", units, "LENGTH_MILLIMETRES", dmax)
+	if hi <= lo:
+		return dmin, dmax
+	return lo, hi
+
+
+def _maxspeed_mm_s(axis, units, default: float) -> float:
+	return _setting(axis, "maxspeed", units, "VELOCITY_MILLIMETRES_PER_SECOND", default)
+
+
+def _setting(axis, name: str, units, unit_attr: str, default: float) -> float:
+	src = _settings_axis(axis)
+	get = getattr(getattr(src, "settings", None), "get", None)
+	if not callable(get):
+		return default
+	try:
+		if units is not None:
+			return float(get(name, getattr(units, unit_attr)))
+		return float(get(name))
+	except Exception:
+		return default
+
+
+def _settings_axis(axis):
+	# Why: lockstep has no settings bag; read the first member axis.
+	get_nums = getattr(axis, "get_axis_numbers", None)
+	device = getattr(axis, "device", None)
+	get_axis = getattr(device, "get_axis", None)
+	if not callable(get_nums) or not callable(get_axis):
+		return axis
+	try:
+		return get_axis(int(get_nums()[0]))
+	except Exception:
+		return axis
 
 
 def _position(axis, units) -> float:

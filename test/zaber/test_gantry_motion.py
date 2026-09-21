@@ -188,6 +188,63 @@ def test_lockstep_binds_x() -> None:
 	assert y_ax is dev.axes[2]
 
 
+class _LockstepX(FakeAxis):
+	def is_enabled(self) -> bool:
+		return True
+
+	def get_axis_numbers(self) -> list[int]:
+		return [1, 2]
+
+
+def test_xxy_lockstep_uses_free_axis_for_y() -> None:
+	# Why: axes 1+2 are the X pair; Y must be axis 3 on an X-MCC3.
+	dev = FakeDevice()
+	dev.lockstep = _LockstepX()
+	dev.axes[3] = FakeAxis()
+	dev.axis_count = 3
+	x_ax, y_ax = _bind_axes(dev, HardwareSettings(lockstep_group=1, y_axis=2))
+	assert x_ax is dev.lockstep
+	assert y_ax is dev.axes[3]
+
+
+class _Lim:
+	def __init__(self, lo: float, hi: float, spd: float = 400.0) -> None:
+		self.lo, self.hi, self.spd = lo, hi, spd
+
+	def get(self, name: str, unit=None):
+		del unit
+		if name == "limit.min":
+			return self.lo
+		if name == "limit.max":
+			return self.hi
+		if name == "maxspeed":
+			return self.spd
+		raise KeyError(name)
+
+
+def test_home_uses_device_midpoint_when_fov_spawn_is_past_travel() -> None:
+	# Why: 993 mm is Ace FOV center; X-MCC lockstep rejected it as BADDATA.
+	x, y = FakeAxis(), FakeAxis()
+	x.settings = _Lim(0.0, 300.0)
+	y.settings = _Lim(0.0, 200.0)
+	g = _gantry(
+		x, y, home_x_mm=993.6, home_y_mm=621.0, x_max=1987, y_max=1242, poll_min_s=0.0
+	)
+	g.home()
+	assert x.pos == pytest.approx(150.0)
+	assert y.pos == pytest.approx(100.0)
+	assert g.settings.max_speed_mm_s == pytest.approx(400.0)
+
+
+def test_home_keeps_spawn_when_inside_travel() -> None:
+	x, y = FakeAxis(), FakeAxis()
+	x.settings = _Lim(0.0, 300.0)
+	y.settings = _Lim(0.0, 200.0)
+	g = _gantry(x, y, home_x_mm=40.0, home_y_mm=50.0, poll_min_s=0.0)
+	g.home()
+	assert g.get_xy() == (40.0, 50.0)
+
+
 def test_is_busy_reads_axes() -> None:
 	x, y = FakeAxis(), FakeAxis()
 	x.busy = True
