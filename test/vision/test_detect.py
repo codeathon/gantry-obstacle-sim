@@ -1,4 +1,4 @@
-"""AnimalDetector: mouse blob in Mono8, toy discarded via encoder XY."""
+"""AnimalDetector: ferret blob in Mono8, toy discarded via encoder XY."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def test_blob_centroid_after_warmup() -> None:
 
 
 def test_toy_blob_near_encoder_is_ignored() -> None:
-	# Why: mouse and toy can both be in the Ace FOV; chase wants the animal.
+	# Why: ferret and toy can both be in the Ace FOV; chase wants the animal.
 	det = _tiny_detector()
 	bg = bytearray(32 * 32)
 	det.update(_frame(32, 32, bg, idx=1))
@@ -60,7 +60,7 @@ def test_toy_blob_near_encoder_is_ignored() -> None:
 	assert det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0)) is None
 
 
-def test_mouse_far_from_encoder_is_kept() -> None:
+def test_ferret_far_from_encoder_is_kept() -> None:
 	det = _tiny_detector()
 	bg = bytearray(32 * 32)
 	det.update(_frame(32, 32, bg, idx=1))

@@ -18,9 +18,8 @@ STATIC = Path(__file__).resolve().parent / "static"
 def create_app() -> FastAPI:
 	app = FastAPI(title="Prey gantry hunt sim")
 	sim = HuntSim()
-	# Why: warmup idles chase; pointer+X-MCC must hunt without an extra Start click.
-	if not sim._live_ace:
-		sim.set_trial("start")
+	# Why: warmup idles chase; Ace blob and pointer hunts must start without S.
+	sim.set_trial("start")
 	app.state.sim = sim
 	app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

@@ -340,6 +340,7 @@ def _scene_dict(frame, frame_index: int) -> dict:
 		"bearing_deg": frame.bearing_deg if frame else 0,
 		"closing_speed_mm_s": frame.closing_speed_mm_s if frame else 0,
 		"frame_index": frame_index,
+		"ferret_confidence": frame.quality.ferret_confidence if frame else 0.0,
 	}
 
 

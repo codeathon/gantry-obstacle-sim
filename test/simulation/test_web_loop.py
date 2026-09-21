@@ -12,8 +12,8 @@ def test_loop_timing_hardware_is_chase_rate() -> None:
 	assert loop_timing(_Hw()) == (0.020, 0.016, 0.005)
 
 
-def test_web_app_autostarts_pointer_trial() -> None:
-	# Why: warmup left the X-MCC idle until someone pressed S.
+def test_web_app_autostarts_trial() -> None:
+	# Why: warmup left the X-MCC idle; Ace and pointer hunts both auto-start.
 	from simulation.web.app import create_app
 
 	app = create_app()

@@ -21,6 +21,9 @@ class TrackingPipeline:
 		self._fps = fps
 		self._prev_px: tuple[float, float] | None = None
 		self._prev_ns = 0
+		# Why: pylon-track kMaxCoastFrames (~0.15 s at 200 fps).
+		self._miss = 0
+		self._max_coast = 30
 		# Why: tests shrink warmup/exclude; live Ace uses AnimalDetector defaults.
 		self._detector = detector or AnimalDetector(gsd_mm_per_px=gsd_mm_per_px)
 
@@ -31,10 +34,12 @@ class TrackingPipeline:
 		prey_xy_mm: tuple[float, float] | None = None,
 	) -> TrackingFrame:
 		# Why: CameraFrame in, TrackingFrame out — no Pylon or Zaber types.
+		# prey_xy_mm must be arena/FOV mm so detector px = mm / GSD.
 		ferret = self._ferret_from_camera(camera_frame, prey_xy_mm)
 		quality = TrackingQuality()
 		if ferret.valid:
-			quality.ferret_confidence = 1.0
+			# Why: pylon-track halves confidence while coasting a missed blob.
+			quality.ferret_confidence = 1.0 if self._miss == 0 else 0.5
 		return TrackingFrame(
 			frame_index=camera_frame.frame_index,
 			camera_ts_ticks=camera_frame.camera_ts_ns,
@@ -52,10 +57,25 @@ class TrackingPipeline:
 			# Why: live Ace has Mono8 only; ignore the toy blob via encoder XY.
 			hit = self._detector.update(frame, prey_xy_mm)
 			if hit is None:
-				self._prev_px = None
-				return TrackState()
+				return self._coast_ferret()
 			x_px, y_px = hit
+		self._miss = 0
 		return self._track_px(x_px, y_px, frame.host_time_ns)
+
+	def _coast_ferret(self) -> TrackState:
+		# Why: pylon-track coasts Kalman; hold last Ace px so chase does not drop.
+		self._miss += 1
+		if self._prev_px is None or self._miss > self._max_coast:
+			self._prev_px = None
+			return TrackState()
+		x_px, y_px = self._prev_px
+		return TrackState(
+			x_mm=x_px * self._gsd,
+			y_mm=y_px * self._gsd,
+			valid=True,
+			x_px=x_px,
+			y_px=y_px,
+		)
 
 	def _track_px(self, x_px: float, y_px: float, host_ns: int) -> TrackState:
 		speed, direction = self._motion_from_px(x_px, y_px, host_ns)

@@ -117,12 +117,18 @@ class Experiment:
 	def _ingest_camera(self, cam_frame) -> TrackingFrame | None:
 		if cam_frame is None:
 			return None
-		prey_xy = self._gantry.get_xy()
-		scene = self._pipeline.process(cam_frame, self.trial.phase, prey_xy)
+		# Why: AnimalDetector does mm/GSD; raw rail mm is not Ace pixels.
+		scene = self._pipeline.process(
+			cam_frame, self.trial.phase, self._prey_arena_xy()
+		)
 		self._stamp_encoder_prey(scene, arena=True)
 		self._submit_chase(scene)
 		self.last_scene = scene
 		return scene
+
+	def _prey_arena_xy(self) -> tuple[float, float]:
+		box = travel_box(self._gantry, self._fov_w, self._fov_h)
+		return gantry_to_arena(*self._gantry.get_xy(), box, self._fov_w, self._fov_h)
 
 	def run_live(self, duration_s: float = 0.0, auto_start: bool = True) -> None:
 		# Why: pylon-track chase_feed is a tight loop, not a disk dump.

@@ -177,6 +177,45 @@ def test_hardware_pointer_skips_ace_delay() -> None:
 	assert abs(sim.exp.last_scene.ferret.x_mm - 120.0) < 1e-6
 
 
+def test_ace_ferret_and_encoder_toy_share_arena() -> None:
+	# Why: chase must see Ace ferret + Zaber toy in the same mapped arena.
+	g = ZaberGantry(
+		HardwareSettings(
+			home_x_mm=50.0,
+			home_y_mm=50.0,
+			x_max=320.0,
+			y_max=210.0,
+			poll_min_s=0.0,
+		),
+		x_axis=_HwAxis(80.0),
+		y_axis=_HwAxis(42.0),
+	)
+	sim = HuntSim(grabber=_LiveGrabber(_ace_frames()), gantry=g)
+	sim.controller._period_s = 0.0
+	sim.trial = TrialPhase.running
+	sim.gantry.move_absolute(80.0, 42.0)
+	for _ in range(40):
+		sim.step(0.001)
+	from zaber.arena_map import arena_to_gantry, gantry_to_arena, travel_box
+
+	cam = sim.cfg.camera
+	box = travel_box(g, cam.width_mm, cam.height_mm)
+	gsd = cam.gsd_mm_per_px
+	fx, fy = 7.5 * gsd, 7.5 * gsd
+	gx, gy = arena_to_gantry(fx, fy, box, cam.width_mm, cam.height_mm)
+	ex, ey = sim.gantry.get_xy()
+	ax, ay = gantry_to_arena(ex, ey, box, cam.width_mm, cam.height_mm)
+	snap = sim.snapshot()
+	seen = sim.controller._latest.ferret
+	assert snap["ferret_source"] == "ace"
+	assert abs(sim.true_ferret.x_mm - fx) < 0.5
+	assert abs(seen.x_mm - gx) < 1.0
+	assert abs(seen.y_mm - gy) < 1.0
+	assert abs(snap["prey"]["x_mm"] - ax) < 1e-6
+	assert abs(snap["prey"]["y_mm"] - ay) < 1e-6
+	assert "move_velocity" in sim.gantry.calls
+
+
 def test_set_pointer_marks_hud_dirty() -> None:
 	sim = HuntSim()
 	sim._hud_dirty = False
