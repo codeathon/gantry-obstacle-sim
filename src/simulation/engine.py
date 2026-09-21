@@ -211,6 +211,8 @@ class HuntSim:
 		)
 
 	def _zaber_dict(self) -> dict:
+		# TODO: capture prey-toy motion from Zaber API encoder X,Y vs time
+		# (time-series graph of get_xy() millimetres, not the mapped HUD pose).
 		ex, ey = self.gantry.get_xy()
 		evx, evy = self.gantry.get_velocity()
 		px, py, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
