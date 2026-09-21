@@ -258,9 +258,12 @@ def test_units_kwargs_on_injected_axis() -> None:
 	g.move_absolute(3.0, 4.0, speed_mm_s=20, accel_mm_s2=30)
 	assert x.pos == 3.0
 	assert x.last_kw["velocity"] == 20
+	g.move_absolute(5.0, 6.0)
+	assert "velocity" not in x.last_kw
 	g.move_velocity(1.0, 2.0)
 	assert x.vel == 1.0
 	assert y.vel == 2.0
+	assert "acceleration" not in x.last_kw
 
 
 def test_want_hardware_env(monkeypatch) -> None:

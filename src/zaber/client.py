@@ -236,12 +236,8 @@ class ZaberGantry:
 		self, x_mm: float, y_mm: float, speed: float, accel: float, wait: bool
 	) -> None:
 		units = self._units
-		kw = {"wait_until_idle": False}
+		kw = _move_kw(units, speed, accel, self.settings.max_speed_mm_s)
 		if units is not None:
-			kw["velocity"] = speed if speed > 0 else self.settings.max_speed_mm_s
-			kw["velocity_unit"] = units.VELOCITY_MILLIMETRES_PER_SECOND
-			kw["acceleration"] = accel if accel > 0 else self.settings.max_accel_mm_s2
-			kw["acceleration_unit"] = units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
 			self._x_axis.move_absolute(x_mm, units.LENGTH_MILLIMETRES, **kw)
 			self._y_axis.move_absolute(y_mm, units.LENGTH_MILLIMETRES, **kw)
 		else:
@@ -255,21 +251,13 @@ class ZaberGantry:
 
 	def _move_vel_hw(self, vx: float, vy: float) -> None:
 		units = self._units
+		# Why: default 2500 mm/s² accel is often past firmware max (BADDATA).
 		if units is not None:
-			acc = self.settings.max_accel_mm_s2
-			self._x_axis.move_velocity(
-				vx, units.VELOCITY_MILLIMETRES_PER_SECOND,
-				acceleration=acc,
-				acceleration_unit=units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED,
-			)
-			self._y_axis.move_velocity(
-				vy, units.VELOCITY_MILLIMETRES_PER_SECOND,
-				acceleration=acc,
-				acceleration_unit=units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED,
-			)
-		else:
-			self._x_axis.move_velocity(vx)
-			self._y_axis.move_velocity(vy)
+			self._x_axis.move_velocity(vx, units.VELOCITY_MILLIMETRES_PER_SECOND)
+			self._y_axis.move_velocity(vy, units.VELOCITY_MILLIMETRES_PER_SECOND)
+			return
+		self._x_axis.move_velocity(vx)
+		self._y_axis.move_velocity(vy)
 
 	def _refresh(self, force: bool = False) -> None:
 		if self._x_axis is None:
@@ -375,6 +363,20 @@ def _settings_axis(axis):
 		return get_axis(int(get_nums()[0]))
 	except Exception:
 		return axis
+
+
+def _move_kw(units, speed: float, accel: float, cap_mm_s: float) -> dict:
+	# Why: omits default 1400 mm/s — that packed as 326224 native and got BADDATA.
+	kw: dict = {"wait_until_idle": False}
+	if units is None:
+		return kw
+	if speed > 0:
+		kw["velocity"] = min(speed, cap_mm_s)
+		kw["velocity_unit"] = units.VELOCITY_MILLIMETRES_PER_SECOND
+	if accel > 0:
+		kw["acceleration"] = accel
+		kw["acceleration_unit"] = units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
+	return kw
 
 
 def _position(axis, units) -> float:
