@@ -8,6 +8,8 @@ from basler.types import CameraFov, CameraFrame
 from simulation.engine import HuntSim
 from simulation.pylon_sim import SimulatedPylonCamera
 from vision.tracking_frame import TrialPhase
+from zaber.client import ZaberGantry
+from zaber.motion import HardwareSettings
 
 
 class _LiveGrabber:
@@ -85,6 +87,33 @@ def _ace_frames() -> list[CameraFrame]:
 	return frames
 
 
+class _HwAxis:
+	# Why: inject hardware backend without opening /dev/ttyUSB.
+	def __init__(self, pos: float = 50.0) -> None:
+		self.pos = pos
+		self.vel = 0.0
+		self.homed = True
+
+	def get_position(self, unit=None):
+		return self.pos
+
+	def home(self) -> None:
+		self.pos = 0.0
+
+	def is_homed(self) -> bool:
+		return self.homed
+
+	def move_absolute(self, position, unit=None, **kwargs) -> None:
+		self.pos = float(position)
+
+	def move_velocity(self, velocity, unit=None, **kwargs) -> None:
+		self.vel = float(velocity)
+
+	def stop(self, wait_until_idle: bool = True) -> None:
+		del wait_until_idle
+		self.vel = 0.0
+
+
 def test_huntsim_uses_pointer_camera_without_ace() -> None:
 	sim = HuntSim()
 	assert not sim._live_ace
@@ -116,3 +145,35 @@ def test_live_ace_blob_drives_ferret_not_pointer() -> None:
 	assert abs(seen.x_mm - 400.0) > 50.0
 	assert sim.snapshot()["ferret_source"] == "ace"
 	assert any(c.name == "move_velocity" for c in sim.gantry.calls)
+
+
+def test_hardware_pointer_skips_ace_delay() -> None:
+	# Why: X-MCC + mouse must not wait SimulatedPylon grab_to_track (~5.7 ms).
+	g = ZaberGantry(
+		HardwareSettings(
+			home_x_mm=50.0,
+			home_y_mm=50.0,
+			x_max=2000.0,
+			y_max=2000.0,
+			poll_min_s=0.0,
+		),
+		x_axis=_HwAxis(),
+		y_axis=_HwAxis(),
+	)
+	sim = HuntSim(gantry=g)
+	assert sim._direct_pointer_chase
+	sim.controller._period_s = 0.0
+	sim.trial = TrialPhase.running
+	sim.set_pointer(120.0, 80.0)
+	sim.step(0.020)
+	seen = sim.controller._latest.ferret
+	assert abs(seen.x_mm - 120.0) < 1e-6
+	assert abs(seen.y_mm - 80.0) < 1e-6
+
+
+def test_set_pointer_marks_hud_dirty() -> None:
+	sim = HuntSim()
+	sim._hud_dirty = False
+	sim.set_pointer(10.0, 20.0)
+	assert sim._hud_dirty
+	assert abs(sim.true_ferret.x_mm - 10.0) < 1e-6

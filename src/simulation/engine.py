@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import asdict, dataclass
 
 from basler.pylon import want_ace
@@ -18,6 +19,13 @@ from zaber.factory import open_gantry
 class Pointer:
 	x_mm: float
 	y_mm: float
+
+
+def loop_timing(gantry) -> tuple[float, float, float]:
+	# Why: hardware serial must not run 1 ms catch-up on the websocket thread.
+	if getattr(gantry, "backend", "") == "hardware":
+		return 0.020, 0.016, 0.005
+	return 0.001, 0.016, 0.0
 
 
 def _select_camera(cam):
@@ -36,15 +44,21 @@ def _select_camera(cam):
 
 
 class HuntSim:
-	def __init__(self, cfg: SimConfig | None = None, grabber: object | None = None) -> None:
+	def __init__(
+		self,
+		cfg: SimConfig | None = None,
+		grabber: object | None = None,
+		gantry: object | None = None,
+	) -> None:
 		self.cfg = cfg or load_sim_config()
 		cam = self.cfg.camera
 		self.t_s = 0.0
 		self.true_ferret = TrackState(cam.width_mm * 0.25, cam.height_mm * 0.5, 0, 0, True)
 		self._prev_fx = self.true_ferret.x_mm
 		self._prev_fy = self.true_ferret.y_mm
+		self._hud_dirty = False
 		# Why: SimulatedGantry unless PREY_ZABER / use_hardware finds an X-MCC.
-		self.gantry = open_gantry(self.cfg)
+		self.gantry = gantry if gantry is not None else open_gantry(self.cfg)
 		self.camera = grabber if grabber is not None else _select_camera(cam)
 		self._live_ace = getattr(self.camera, "backend", "") == "pylon"
 		if self._live_ace:
@@ -81,6 +95,11 @@ class HuntSim:
 	def trial(self, phase: TrialPhase) -> None:
 		self.exp.trial.phase = phase
 
+	@property
+	def _direct_pointer_chase(self) -> bool:
+		# Why: hardware + pointer: skip Ace delay; chase sees mouse mm immediately.
+		return (not self._live_ace) and getattr(self.gantry, "backend", "") == "hardware"
+
 	def set_pointer(self, x_mm: float, y_mm: float) -> None:
 		# Why: pointer is only the animal when no live Ace is grabbing Mono8.
 		if self._live_ace:
@@ -88,6 +107,7 @@ class HuntSim:
 		cam = self.cfg.camera
 		self.true_ferret.x_mm = min(max(x_mm, 0.0), cam.width_mm)
 		self.true_ferret.y_mm = min(max(y_mm, 0.0), cam.height_mm)
+		self._hud_dirty = True
 
 	def set_trial(self, cmd: str) -> None:
 		if cmd == "start":
@@ -107,6 +127,10 @@ class HuntSim:
 		step_g = getattr(self.gantry, "step", None)
 		if callable(step_g):
 			step_g(dt_s, self.t_s)
+		if self._direct_pointer_chase:
+			scene = self.exp.feed_ferret_mm(self.true_ferret, time.time())
+			self.last_frame_index = scene.frame_index
+			return
 		tick = getattr(self.camera, "tick", None)
 		if callable(tick):
 			tick(self.t_s, self.true_ferret)
