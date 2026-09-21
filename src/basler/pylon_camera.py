@@ -14,7 +14,7 @@ from basler.pylon import load_pylon
 from basler.pylon_hw import configure_instant_camera
 from basler.settings import CameraSettings
 from basler.types import CameraFov, CameraFrame
-from vision.ground_calib import GroundCam, ground_cam_for_serial
+from vision.ground_calib import GroundCam, ground_cam_for_serial, overhead_ground_cam
 
 
 class PylonAceCamera:
@@ -160,6 +160,10 @@ def _create_instant_camera(pylon: object) -> object:
 	if not devices:
 		raise RuntimeError("no Basler camera (EnumerateDevices empty)")
 	serial = os.environ.get("PYLON_SERIAL") or os.environ.get("PYLON_CAMERA") or ""
+	if not serial:
+		# Why: ferret track is the nadir Ace, not the first USB device (often a NIR).
+		over = overhead_ground_cam()
+		serial = over.serial if over is not None else ""
 	info = _pick_device(devices, serial)
 	return pylon.InstantCamera(tlf.CreateDevice(info))
 

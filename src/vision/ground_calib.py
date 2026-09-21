@@ -70,6 +70,14 @@ def ground_cam_for_serial(serial: str, path: Path | None = None) -> GroundCam | 
 	return load_ground_cams(path).get(serial)
 
 
+def overhead_ground_cam(path: Path | None = None) -> GroundCam | None:
+	# Why: ferret is on the floor; side NIR look across the arena (az_z ~ -0.89).
+	cams = load_ground_cams(path)
+	if not cams:
+		return None
+	return min(cams.values(), key=lambda c: c.az[2])
+
+
 def px_to_world(cam: GroundCam, u: float, v: float) -> tuple[float, float]:
 	# Ray in camera: K^{-1}[u,v,1]; world_orientation columns are camera axes.
 	x = (u - cam.cx) / cam.fx

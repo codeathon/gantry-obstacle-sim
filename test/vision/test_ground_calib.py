@@ -1,7 +1,13 @@
 """Charuco camera_calibration.toml: acA1300-200um onto the arena floor."""
 
 from basler.types import CameraFrame
-from vision.ground_calib import ground_cam_for_serial, load_ground_cams, px_to_arena, px_to_world
+from vision.ground_calib import (
+	ground_cam_for_serial,
+	load_ground_cams,
+	overhead_ground_cam,
+	px_to_arena,
+	px_to_world,
+)
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrialPhase
 
@@ -15,6 +21,14 @@ def test_loads_lab_serials() -> None:
 		"25000609",
 		"25006505",
 	}
+
+
+def test_overhead_cam_is_200um_not_side_nir() -> None:
+	# Why: ferret detection is the nadir view; NIR cams look across the walls.
+	over = overhead_ground_cam()
+	assert over is not None
+	assert over.serial == "24676894"
+	assert over.az[2] < -0.99
 
 
 def test_overhead_200um_gsd_is_not_ace2() -> None:

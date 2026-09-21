@@ -184,3 +184,22 @@ def test_save_pgm_black_when_no_pixels(tmp_path: Path) -> None:
 	save_mono8_pgm(path, CameraFrame(width_px=2, height_px=2, pixels=None))
 	body = path.read_bytes()
 	assert body.endswith(b"\x00\x00\x00\x00")
+
+
+def test_unspecified_serial_picks_overhead_not_first_usb() -> None:
+	# Why: EnumerateDevices[0] can be a side NIR; ferret is the nadir Ace.
+	from basler.pylon_camera import _pick_device
+	from vision.ground_calib import overhead_ground_cam
+
+	class _Info:
+		def __init__(self, sn: str) -> None:
+			self._sn = sn
+
+		def GetSerialNumber(self) -> str:
+			return self._sn
+
+	over = overhead_ground_cam()
+	assert over is not None
+	devices = [_Info("24908831"), _Info(over.serial)]
+	hit = _pick_device(devices, over.serial)
+	assert hit.GetSerialNumber() == "24676894"
