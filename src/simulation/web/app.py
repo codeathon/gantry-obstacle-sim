@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from simulation.engine import HuntSim
+from simulation.engine import HuntSim, loop_timing
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -18,6 +18,9 @@ STATIC = Path(__file__).resolve().parent / "static"
 def create_app() -> FastAPI:
 	app = FastAPI(title="Prey gantry hunt sim")
 	sim = HuntSim()
+	# Why: warmup idles chase; pointer+X-MCC must hunt without an extra Start click.
+	if not sim._live_ace:
+		sim.set_trial("start")
 	app.state.sim = sim
 	app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -51,20 +54,28 @@ def _handle_client(sim: HuntSim, msg: dict) -> None:
 
 async def _sim_loop(ws: WebSocket, sim: HuntSim) -> None:
 	# Why: 1 ms physics keeps 200 fps grabs and 4 ms Zaber RTT honest vs wall clock.
-	step_s = 0.001
-	send_every = 0.033
+	step_s, send_every, idle_s = loop_timing(sim.gantry)
 	acc = 0.0
 	last = time.perf_counter()
 	last_send = last
 	while True:
-		await asyncio.sleep(0.0)
+		await asyncio.sleep(idle_s)
 		now = time.perf_counter()
 		acc += min(now - last, 0.05)
 		last = now
 		while acc >= step_s:
-			sim.step(step_s)
+			try:
+				sim.step(step_s)
+			except Exception as exc:
+				# Why: one BADDATA used to cancel the hunt loop with no traceback.
+				sim._loop_error = str(exc)
 			acc -= step_s
-		if now - last_send >= send_every:
+			if idle_s > 0:
+				# Why: one hardware step per turn so pointer WS is not starved.
+				acc = 0.0
+				break
+		if now - last_send >= send_every or sim._hud_dirty:
+			sim._hud_dirty = False
 			last_send = now
 			await ws.send_json(sim.snapshot())
 

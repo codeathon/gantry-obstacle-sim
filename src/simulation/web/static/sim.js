@@ -7,6 +7,7 @@ const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
 let state = null;
 let pointerMm = null;
+let ptrDirty = false;
 
 ws.onmessage = (ev) => {
 	state = JSON.parse(ev.data);
@@ -24,6 +25,8 @@ function syncHint(s) {
 	if (!el) return;
 	if (s.ferret_source === "ace") {
 		el.textContent = "Live Ace blob is the ferret. Pointer is ignored. Grey ghost is the chase pose. Toy is the Zaber encoder.";
+	} else if (s.zaber && s.zaber.backend === "hardware") {
+		el.textContent = "Pointer is the ferret (no Ace delay). Toy is the X-MCC encoder. Start trial (S) to chase.";
 	}
 }
 
@@ -38,8 +41,18 @@ canvas.addEventListener("mousemove", (e) => {
 		x_mm: nx * state.arena.width_mm,
 		y_mm: ny * state.arena.height_mm,
 	};
-	sendJson({ type: "pointer", ...pointerMm });
+	// Why: draw locally now; rAF batches WS so serial chase is not flooded.
+	ptrDirty = true;
+	draw();
 });
+
+function pumpPointer() {
+	requestAnimationFrame(pumpPointer);
+	if (!ptrDirty || !pointerMm) return;
+	ptrDirty = false;
+	sendJson({ type: "pointer", ...pointerMm });
+}
+pumpPointer();
 
 document.querySelectorAll("[data-trial]").forEach((btn) => {
 	btn.addEventListener("click", () => sendJson({ type: "trial", cmd: btn.dataset.trial }));
@@ -64,6 +77,7 @@ function draw() {
 	ctx.fillStyle = "#0d0f0c";
 	ctx.fillRect(0, 0, w, h);
 	drawGrid();
+	drawTravel();
 	drawThreatRings();
 	drawCone();
 	drawFlee();
@@ -100,10 +114,24 @@ function drawThreatRings() {
 	circle(cx, cy, pref * gsd);
 	ctx.strokeStyle = "rgba(211,107,94,0.3)";
 	circle(cx, cy, minG * gsd);
-	// Wall keep-out band (arena edge margin).
-	const m = (state.policy.wall_margin_mm || 280) * gsd;
-	ctx.strokeStyle = "rgba(126,200,196,0.2)";
-	ctx.strokeRect(m, m, canvas.width - 2 * m, canvas.height - 2 * m);
+}
+
+function drawTravel() {
+	// Why: travel is mapped onto the full FOV; box is the scaled rail window.
+	const z = state.zaber;
+	if (!z || z.x_max == null || z.y_max == null) return;
+	const [x0, y0] = mmToPx(z.x_min || 0, z.y_min || 0);
+	const [x1, y1] = mmToPx(z.x_max, z.y_max);
+	ctx.strokeStyle = "rgba(126,200,196,0.5)";
+	ctx.lineWidth = 2;
+	ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+	const m = state.policy.wall_margin_mm || 0;
+	if (m <= 0) return;
+	const [ix0, iy0] = mmToPx((z.x_min || 0) + m, (z.y_min || 0) + m);
+	const [ix1, iy1] = mmToPx(z.x_max - m, z.y_max - m);
+	ctx.strokeStyle = "rgba(126,200,196,0.22)";
+	ctx.lineWidth = 1;
+	ctx.strokeRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
 }
 
 function drawCone() {
@@ -126,11 +154,15 @@ function drawGhost() {
 
 function drawFerret() {
 	const f = state.ferret_true;
-	if (!f.valid) return;
-	const [x, y] = mmToPx(f.x_mm, f.y_mm);
+	// Why: pointer hybrid should not wait for the next HUD snapshot.
+	const src = state.ferret_source !== "ace" && pointerMm
+		? { x_mm: pointerMm.x_mm, y_mm: pointerMm.y_mm, direction_deg: f.direction_deg, valid: true }
+		: f;
+	if (!src.valid) return;
+	const [x, y] = mmToPx(src.x_mm, src.y_mm);
 	ctx.fillStyle = "#e2b84a";
 	blob(x, y, 8);
-	heading(x, y, f.direction_deg, "#e2b84a");
+	heading(x, y, src.direction_deg, "#e2b84a");
 }
 
 function drawPrey() {
@@ -176,11 +208,17 @@ function renderHud() {
 	hud.innerHTML = hudCamera(s) + hudZaber(s) + hudAnimals(s) + hudDecision(s);
 }
 
+function ferretSourceLabel(s) {
+	if (s.ferret_source === "ace") return "live Ace blob";
+	if (s.zaber && s.zaber.backend === "hardware") return "pointer (no Ace delay)";
+	return "pointer delay model";
+}
+
 function hudCamera(s) {
 	const c = s.camera;
 	return `
 		<h2>Basler / pylon</h2>
-		${row("ferret source", s.ferret_source === "ace" ? "live Ace blob" : "pointer delay model", s.ferret_source === "ace" ? "ok" : "")}
+		${row("ferret source", ferretSourceLabel(s), s.ferret_source === "ace" || (s.zaber && s.zaber.backend === "hardware") ? "ok" : "")}
 		${row("model", c.model)}
 		${row("backend", c.backend || "sim", c.backend === "pylon" ? "ok" : "")}
 		${row("format", `${c.pixel_format} ${s.arena.width_px}×${s.arena.height_px}`)}
@@ -202,9 +240,13 @@ function hudZaber(s) {
 	return `
 		<h2>Zaber API</h2>
 		${row("backend", z.backend || "sim", z.backend === "hardware" ? "ok" : "")}
+		${z.loop_error ? row("loop error", z.loop_error, "warn") : ""}
 		${row("link", z.comm + " RTT " + z.rtt_ms.toFixed(1) + " ms")}
 		${row("busy", String(z.busy), z.busy ? "warn" : "ok")}
 		${row("position", `${z.x_mm.toFixed(1)}, ${z.y_mm.toFixed(1)} mm`)}
+		${row("encoder", `${(z.enc_x_mm != null ? z.enc_x_mm : z.x_mm).toFixed(1)}, ${(z.enc_y_mm != null ? z.enc_y_mm : z.y_mm).toFixed(1)} mm`)}
+		${row("encoder frame", "rails scaled to full FOV")}
+		${row("travel", `rails ${(z.enc_x_min != null ? z.enc_x_min : 0).toFixed(0)}–${(z.enc_x_max != null ? z.enc_x_max : z.x_max).toFixed(0)} × ${(z.enc_y_min != null ? z.enc_y_min : 0).toFixed(0)}–${(z.enc_y_max != null ? z.enc_y_max : z.y_max).toFixed(0)} mm`)}
 		${row("velocity", `${z.speed_mm_s.toFixed(0)} mm/s  ${z.heading_deg.toFixed(0)}°`)}
 		${row("limits", `${z.max_speed_mm_s} mm/s · ${z.max_accel_mm_s2} mm/s²`)}
 		<ul class="calls">${z.api_calls.map((a) => `<li>${a.name} ${esc(a.detail)}</li>`).join("")}</ul>

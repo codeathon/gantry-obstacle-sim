@@ -7,7 +7,7 @@ from experiment.camera_preview import main as camera_preview_main
 from experiment.orchestrator import Experiment
 from experiment.run import main as run_main
 from experiment.trial import TrialStateMachine
-from vision.tracking_frame import TrialPhase
+from vision.tracking_frame import TrackState, TrialPhase
 from zaber.client import ZaberGantry
 
 
@@ -39,6 +39,61 @@ def test_chase_feed_overwrites_prey_from_encoder() -> None:
 	assert scene.prey.valid
 	assert not scene.ferret.valid
 	assert scene.frame_index == 1
+
+
+def test_start_applies_gantry_travel_to_chase() -> None:
+	# Why: prey walls must be firmware rails, not the Ace FOV rectangle.
+	class _Ax:
+		def __init__(self) -> None:
+			self.pos = 0.0
+			self.homed = True
+
+		def get_position(self, unit=None):
+			return self.pos
+
+		def home(self) -> None:
+			self.pos = 0.0
+
+		def is_homed(self) -> bool:
+			return True
+
+		def move_absolute(self, position, unit=None, **kwargs) -> None:
+			self.pos = float(position)
+
+		def move_velocity(self, velocity, unit=None, **kwargs) -> None:
+			return
+
+		def stop(self, wait_until_idle: bool = True) -> None:
+			del wait_until_idle
+
+	from zaber.motion import HardwareSettings
+
+	gantry = ZaberGantry(
+		HardwareSettings(x_max=320.0, y_max=210.0, home_x_mm=10.0, home_y_mm=10.0),
+		x_axis=_Ax(),
+		y_axis=_Ax(),
+	)
+	exp = Experiment(gantry, AceCamera(), cfg=None)
+	exp.start()
+	b = exp.chase._bounds
+	exp.shutdown()
+	assert b.x_max == 320.0
+	assert b.y_max == 210.0
+
+
+def test_feed_ferret_mm_bypasses_camera() -> None:
+	# Why: pointer hybrid must not wait for SimulatedPylon grab_to_track.
+	gantry = ZaberGantry()
+	exp = Experiment(gantry, AceCamera())
+	exp.start()
+	gantry.move_absolute(111.0, 222.0)
+	scene = exp.feed_ferret_mm(TrackState(40.0, 50.0, 0, 0, True))
+	exp.shutdown()
+	assert scene.ferret.x_mm == 40.0
+	assert scene.ferret.y_mm == 50.0
+	assert scene.prey.x_mm == 111.0
+	assert scene.quality.ferret_confidence == 1.0
+	assert scene.ferret.valid
 
 
 def test_operator_start_reaches_tracking_frame() -> None:

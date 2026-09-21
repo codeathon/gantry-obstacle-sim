@@ -151,6 +151,35 @@ def test_hardware_caps_speed() -> None:
 	assert y.vel == pytest.approx(0.0)
 
 
+def test_zero_firmware_maxspeed_is_ignored() -> None:
+	class _Spd:
+		def get(self, name, unit=None):
+			del unit
+			if name == "maxspeed":
+				return 0.0
+			raise KeyError(name)
+
+	x, y = FakeAxis(50.0), FakeAxis(50.0)
+	x.settings = _Spd()
+	y.settings = _Spd()
+	g = _gantry(x, y, max_speed_mm_s=1000, x_min=0, x_max=200, y_min=0, y_max=200)
+	assert g.settings.max_speed_mm_s == 1000
+
+
+def test_move_velocity_lockstep_without_unit_kw() -> None:
+	class _VelOnly(FakeAxis):
+		def move_velocity(self, velocity):
+			self.calls.append("move_velocity")
+			self.vel = float(velocity)
+
+	x, y = _VelOnly(50.0), _VelOnly(50.0)
+	g = _gantry(x, y, x_min=0, x_max=200, y_min=0, y_max=200, max_speed_mm_s=1000)
+	g._units = _FakeUnits()
+	g.move_velocity(12.0, -3.0)
+	assert x.vel == 12.0
+	assert "move_velocity_error" not in g.calls
+
+
 def test_hardware_clips_absolute() -> None:
 	x, y = FakeAxis(), FakeAxis()
 	g = _gantry(x, y, x_min=0, x_max=100, y_min=0, y_max=80)
@@ -188,10 +217,81 @@ def test_lockstep_binds_x() -> None:
 	assert y_ax is dev.axes[2]
 
 
-def test_is_busy_reads_axes() -> None:
+class _LockstepX(FakeAxis):
+	def is_enabled(self) -> bool:
+		return True
+
+	def get_axis_numbers(self) -> list[int]:
+		return [1, 2]
+
+
+def test_xxy_lockstep_uses_free_axis_for_y() -> None:
+	# Why: axes 1+2 are the X pair; Y must be axis 3 on an X-MCC3.
+	dev = FakeDevice()
+	dev.lockstep = _LockstepX()
+	dev.axes[3] = FakeAxis()
+	dev.axis_count = 3
+	x_ax, y_ax = _bind_axes(dev, HardwareSettings(lockstep_group=1, y_axis=2))
+	assert x_ax is dev.lockstep
+	assert y_ax is dev.axes[3]
+
+
+class _Lim:
+	def __init__(self, lo: float, hi: float, spd: float = 400.0) -> None:
+		self.lo, self.hi, self.spd = lo, hi, spd
+
+	def get(self, name: str, unit=None):
+		del unit
+		if name == "limit.min":
+			return self.lo
+		if name == "limit.max":
+			return self.hi
+		if name == "maxspeed":
+			return self.spd
+		raise KeyError(name)
+
+
+def test_home_uses_device_midpoint_when_fov_spawn_is_past_travel() -> None:
+	# Why: 993 mm is Ace FOV center; X-MCC lockstep rejected it as BADDATA.
 	x, y = FakeAxis(), FakeAxis()
-	x.busy = True
-	assert _gantry(x, y).is_busy()
+	x.settings = _Lim(0.0, 300.0)
+	y.settings = _Lim(0.0, 200.0)
+	g = _gantry(
+		x, y, home_x_mm=993.6, home_y_mm=621.0, x_max=1987, y_max=1242, poll_min_s=0.0
+	)
+	g.home()
+	assert x.pos == pytest.approx(150.0)
+	assert y.pos == pytest.approx(100.0)
+	assert g.settings.max_speed_mm_s == pytest.approx(400.0)
+
+
+def test_home_keeps_spawn_when_inside_travel() -> None:
+	x, y = FakeAxis(), FakeAxis()
+	x.settings = _Lim(0.0, 300.0)
+	y.settings = _Lim(0.0, 200.0)
+	g = _gantry(x, y, home_x_mm=40.0, home_y_mm=50.0, poll_min_s=0.0)
+	g.home()
+	assert g.get_xy() == (40.0, 50.0)
+
+
+def test_is_busy_uses_encoder_speed() -> None:
+	# Why: axis is_busy is a serial RTT; HUD uses cached encoder delta instead.
+	x, y = FakeAxis(50.0), FakeAxis(50.0)
+	g = _gantry(x, y, x_min=0, x_max=200, y_min=0, y_max=200, max_speed_mm_s=1000)
+	assert not g.is_busy()
+	g._vx, g._vy = 12.0, 0.0
+	assert g.is_busy()
+
+
+def test_duplicate_move_velocity_skips_serial() -> None:
+	x, y = FakeAxis(50.0), FakeAxis(50.0)
+	g = _gantry(x, y, x_min=0, x_max=200, y_min=0, y_max=200, max_speed_mm_s=1000)
+	g.move_velocity(12.0, -3.0)
+	n = x.calls.count("move_velocity")
+	g.move_velocity(12.0, -3.0)
+	assert x.calls.count("move_velocity") == n
+	g.move_velocity(20.0, -3.0)
+	assert x.calls.count("move_velocity") == n + 1
 
 
 def test_units_kwargs_on_injected_axis() -> None:
@@ -201,9 +301,12 @@ def test_units_kwargs_on_injected_axis() -> None:
 	g.move_absolute(3.0, 4.0, speed_mm_s=20, accel_mm_s2=30)
 	assert x.pos == 3.0
 	assert x.last_kw["velocity"] == 20
+	g.move_absolute(5.0, 6.0)
+	assert "velocity" not in x.last_kw
 	g.move_velocity(1.0, 2.0)
 	assert x.vel == 1.0
 	assert y.vel == 2.0
+	assert "acceleration" not in x.last_kw
 
 
 def test_want_hardware_env(monkeypatch) -> None:

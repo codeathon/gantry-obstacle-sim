@@ -47,6 +47,8 @@ class ZaberGantry:
 		self._units = None
 		self._last_poll_s = 0.0
 		self._prev_poll_s = 0.0
+		self._cmd_vx = 0.0
+		self._cmd_vy = 0.0
 		self._log: deque[ApiCall] = deque(maxlen=12)
 		# Why: only factory hardware path scans USB; stubs must not open /dev/ttyUSB.
 		self._use_serial = use_serial
@@ -56,6 +58,7 @@ class ZaberGantry:
 		self._note("connect", self.settings.port or "stub")
 		if self._x_axis is not None:
 			self.connected = True
+			self._apply_device_limits()
 			self._refresh(force=True)
 			return
 		if self._use_serial:
@@ -94,9 +97,8 @@ class ZaberGantry:
 		return self._vx, self._vy
 
 	def is_busy(self) -> bool:
-		if self._x_axis is None:
-			return (self._vx * self._vx + self._vy * self._vy) ** 0.5 > 1.0
-		return _busy(self._x_axis) or _busy(self._y_axis)
+		# Why: HUD/chase must not add two is_busy serial RTTs on every snapshot.
+		return (self._vx * self._vx + self._vy * self._vy) ** 0.5 > 1.0
 
 	def step(self, dt_s: float = 0.0, t_s: float = 0.0) -> None:
 		# Why: firmware integrates motion; SimulatedGantry is the one that steps.
@@ -123,6 +125,9 @@ class ZaberGantry:
 	def move_velocity(self, vx_mm_s: float, vy_mm_s: float) -> None:
 		# Why: live hunt is continuous velocity, not discrete flee points.
 		vx_mm_s, vy_mm_s = self._cap_vel(vx_mm_s, vy_mm_s)
+		if self._same_vel_cmd(vx_mm_s, vy_mm_s):
+			return
+		self._cmd_vx, self._cmd_vy = vx_mm_s, vy_mm_s
 		self._note("move_velocity", f"v=({vx_mm_s:.0f},{vy_mm_s:.0f})")
 		if self._x_axis is None:
 			self._vx, self._vy = vx_mm_s, vy_mm_s
@@ -132,6 +137,7 @@ class ZaberGantry:
 	def stop(self) -> None:
 		# Why: trial end and stale frames must decelerate both axes.
 		self._note("stop", "")
+		self._cmd_vx = self._cmd_vy = 0.0
 		if self._x_axis is None:
 			self._vx = self._vy = 0.0
 			return
@@ -153,6 +159,10 @@ class ZaberGantry:
 	def _clip(self, x_mm: float, y_mm: float) -> tuple[float, float]:
 		s = self.settings
 		return clip_xy(x_mm, y_mm, s.x_min, s.x_max, s.y_min, s.y_max)
+
+	def _same_vel_cmd(self, vx: float, vy: float) -> bool:
+		# Why: identical 50 Hz repeats still take two serial RTTs on X-MCC.
+		return abs(vx - self._cmd_vx) < 0.5 and abs(vy - self._cmd_vy) < 0.5
 
 	def _cap_vel(self, vx: float, vy: float) -> tuple[float, float]:
 		s = self.settings
@@ -201,6 +211,7 @@ class ZaberGantry:
 		self._x_axis, self._y_axis = _bind_axes(device, self.settings)
 		self.settings.port = port
 		self.connected = True
+		self._apply_device_limits()
 		self._refresh(force=True)
 
 	def _home_hardware(self) -> None:
@@ -209,22 +220,36 @@ class ZaberGantry:
 		if not _is_homed(self._y_axis):
 			self._y_axis.home()
 		self.homed = True
-		self.move_absolute(
-			self.settings.home_x_mm,
-			self.settings.home_y_mm,
-			wait_until_idle=True,
-		)
+		self._apply_device_limits()
+		x_mm, y_mm = self._reachable_home()
+		self.move_absolute(x_mm, y_mm, wait_until_idle=True)
+
+	def _reachable_home(self) -> tuple[float, float]:
+		s = self.settings
+		if s.x_min <= s.home_x_mm <= s.x_max and s.y_min <= s.home_y_mm <= s.y_max:
+			return s.home_x_mm, s.home_y_mm
+		# Why: sim.json spawn is Ace FOV center (~1 m); X-MCC travel is smaller.
+		return (s.x_min + s.x_max) * 0.5, (s.y_min + s.y_max) * 0.5
+
+	def _apply_device_limits(self) -> None:
+		if self._x_axis is None or self._y_axis is None:
+			return
+		s = self.settings
+		s.x_min, s.x_max = _travel_mm(self._x_axis, self._units, s.x_min, s.x_max)
+		s.y_min, s.y_max = _travel_mm(self._y_axis, self._units, s.y_min, s.y_max)
+		vx = _maxspeed_mm_s(self._x_axis, self._units, s.max_speed_mm_s)
+		vy = _maxspeed_mm_s(self._y_axis, self._units, s.max_speed_mm_s)
+		# Why: a 0 or native-unit maxspeed read capped every move_velocity to 0.
+		for cand in (vx, vy):
+			if cand > 10.0:
+				s.max_speed_mm_s = min(s.max_speed_mm_s, cand)
 
 	def _move_abs_hw(
 		self, x_mm: float, y_mm: float, speed: float, accel: float, wait: bool
 	) -> None:
 		units = self._units
-		kw = {"wait_until_idle": False}
+		kw = _move_kw(units, speed, accel, self.settings.max_speed_mm_s)
 		if units is not None:
-			kw["velocity"] = speed if speed > 0 else self.settings.max_speed_mm_s
-			kw["velocity_unit"] = units.VELOCITY_MILLIMETRES_PER_SECOND
-			kw["acceleration"] = accel if accel > 0 else self.settings.max_accel_mm_s2
-			kw["acceleration_unit"] = units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
 			self._x_axis.move_absolute(x_mm, units.LENGTH_MILLIMETRES, **kw)
 			self._y_axis.move_absolute(y_mm, units.LENGTH_MILLIMETRES, **kw)
 		else:
@@ -237,22 +262,12 @@ class ZaberGantry:
 		self._refresh(force=True)
 
 	def _move_vel_hw(self, vx: float, vy: float) -> None:
-		units = self._units
-		if units is not None:
-			acc = self.settings.max_accel_mm_s2
-			self._x_axis.move_velocity(
-				vx, units.VELOCITY_MILLIMETRES_PER_SECOND,
-				acceleration=acc,
-				acceleration_unit=units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED,
-			)
-			self._y_axis.move_velocity(
-				vy, units.VELOCITY_MILLIMETRES_PER_SECOND,
-				acceleration=acc,
-				acceleration_unit=units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED,
-			)
-		else:
-			self._x_axis.move_velocity(vx)
-			self._y_axis.move_velocity(vy)
+		# Why: lockstep signatures differ; a throw used to kill the web hunt loop.
+		try:
+			_axis_move_vel(self._x_axis, vx, self._units)
+			_axis_move_vel(self._y_axis, vy, self._units)
+		except Exception as exc:
+			self._note("move_velocity_error", str(exc)[:80])
 
 	def _refresh(self, force: bool = False) -> None:
 		if self._x_axis is None:
@@ -275,12 +290,124 @@ class ZaberGantry:
 
 
 def _bind_axes(device, settings: HardwareSettings) -> tuple[object, object]:
-	if settings.lockstep_group > 0:
-		x_ax = device.get_lockstep(settings.lockstep_group)
-	else:
-		x_ax = device.get_axis(settings.x_axis)
-	y_ax = device.get_axis(settings.y_axis)
-	return x_ax, y_ax
+	group = settings.lockstep_group
+	if group <= 0:
+		group = _first_enabled_lockstep(device)
+		if group > 0:
+			settings.lockstep_group = group
+	if group > 0:
+		x_ax = device.get_lockstep(group)
+		y_idx = _y_axis_for_lockstep(device, x_ax, settings.y_axis)
+		settings.y_axis = y_idx
+		return x_ax, device.get_axis(y_idx)
+	return device.get_axis(settings.x_axis), device.get_axis(settings.y_axis)
+
+
+def _first_enabled_lockstep(device) -> int:
+	for i in range(1, 4):
+		try:
+			ls = device.get_lockstep(i)
+			if bool(ls.is_enabled()):
+				return i
+		except Exception:
+			continue
+	return 0
+
+
+def _y_axis_for_lockstep(device, lockstep, y_idx: int) -> int:
+	# Why: XXY lockstep 1 is axes 1+2; commanding axis 2 as Y is LOCKSTEP/BADDATA.
+	nums: set[int] = set()
+	get_nums = getattr(lockstep, "get_axis_numbers", None)
+	if callable(get_nums):
+		try:
+			nums = {int(n) for n in get_nums()}
+		except Exception:
+			nums = set()
+	if y_idx not in nums:
+		return y_idx
+	count = int(getattr(device, "axis_count", 3) or 3)
+	for i in range(1, count + 1):
+		if i in nums:
+			continue
+		try:
+			device.get_axis(i)
+			return i
+		except Exception:
+			continue
+	return y_idx
+
+
+def _travel_mm(axis, units, dmin: float, dmax: float) -> tuple[float, float]:
+	lo = _setting(axis, "limit.min", units, "LENGTH_MILLIMETRES", dmin)
+	hi = _setting(axis, "limit.max", units, "LENGTH_MILLIMETRES", dmax)
+	if hi <= lo:
+		return dmin, dmax
+	return lo, hi
+
+
+def _maxspeed_mm_s(axis, units, default: float) -> float:
+	return _setting(axis, "maxspeed", units, "VELOCITY_MILLIMETRES_PER_SECOND", default)
+
+
+def _setting(axis, name: str, units, unit_attr: str, default: float) -> float:
+	src = _settings_axis(axis)
+	get = getattr(getattr(src, "settings", None), "get", None)
+	if not callable(get):
+		return default
+	try:
+		if units is not None:
+			return float(get(name, getattr(units, unit_attr)))
+		return float(get(name))
+	except Exception:
+		return default
+
+
+def _settings_axis(axis):
+	# Why: lockstep has no settings bag; read the first member axis.
+	get_nums = getattr(axis, "get_axis_numbers", None)
+	device = getattr(axis, "device", None)
+	get_axis = getattr(device, "get_axis", None)
+	if not callable(get_nums) or not callable(get_axis):
+		return axis
+	try:
+		return get_axis(int(get_nums()[0]))
+	except Exception:
+		return axis
+
+
+def _move_kw(units, speed: float, accel: float, cap_mm_s: float) -> dict:
+	# Why: omits default 1400 mm/s — that packed as 326224 native and got BADDATA.
+	kw: dict = {"wait_until_idle": False}
+	if units is None:
+		return kw
+	if speed > 0:
+		kw["velocity"] = min(speed, cap_mm_s)
+		kw["velocity_unit"] = units.VELOCITY_MILLIMETRES_PER_SECOND
+	if accel > 0:
+		kw["acceleration"] = accel
+		kw["acceleration_unit"] = units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
+	return kw
+
+
+def _axis_move_vel(axis, vel: float, units) -> None:
+	# Why: Lockstep.move_velocity often has no unit/wait kwargs (TypeError).
+	if units is not None:
+		try:
+			axis.move_velocity(
+				vel, units.VELOCITY_MILLIMETRES_PER_SECOND, wait_until_idle=False
+			)
+			return
+		except TypeError:
+			pass
+		try:
+			axis.move_velocity(vel, units.VELOCITY_MILLIMETRES_PER_SECOND)
+			return
+		except TypeError:
+			pass
+	try:
+		axis.move_velocity(vel, wait_until_idle=False)
+	except TypeError:
+		axis.move_velocity(vel)
 
 
 def _position(axis, units) -> float:
