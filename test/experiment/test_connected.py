@@ -43,11 +43,36 @@ def test_chase_feed_overwrites_prey_from_encoder() -> None:
 
 def test_start_applies_gantry_travel_to_chase() -> None:
 	# Why: prey walls must be firmware rails, not the Ace FOV rectangle.
-	gantry = ZaberGantry()
-	gantry.settings.x_min = 0.0
-	gantry.settings.x_max = 320.0
-	gantry.settings.y_min = 0.0
-	gantry.settings.y_max = 210.0
+	class _Ax:
+		def __init__(self) -> None:
+			self.pos = 0.0
+			self.homed = True
+
+		def get_position(self, unit=None):
+			return self.pos
+
+		def home(self) -> None:
+			self.pos = 0.0
+
+		def is_homed(self) -> bool:
+			return True
+
+		def move_absolute(self, position, unit=None, **kwargs) -> None:
+			self.pos = float(position)
+
+		def move_velocity(self, velocity, unit=None, **kwargs) -> None:
+			return
+
+		def stop(self, wait_until_idle: bool = True) -> None:
+			del wait_until_idle
+
+	from zaber.motion import HardwareSettings
+
+	gantry = ZaberGantry(
+		HardwareSettings(x_max=320.0, y_max=210.0, home_x_mm=10.0, home_y_mm=10.0),
+		x_axis=_Ax(),
+		y_axis=_Ax(),
+	)
 	exp = Experiment(gantry, AceCamera(), cfg=None)
 	exp.start()
 	b = exp.chase._bounds

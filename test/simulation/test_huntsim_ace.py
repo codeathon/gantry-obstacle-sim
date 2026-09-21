@@ -166,9 +166,15 @@ def test_hardware_pointer_skips_ace_delay() -> None:
 	sim.trial = TrialPhase.running
 	sim.set_pointer(120.0, 80.0)
 	sim.step(0.020)
+	from zaber.arena_map import arena_to_gantry, travel_box
+
+	cam = sim.cfg.camera
+	box = travel_box(g, cam.width_mm, cam.height_mm)
+	gx, gy = arena_to_gantry(120.0, 80.0, box, cam.width_mm, cam.height_mm)
 	seen = sim.controller._latest.ferret
-	assert abs(seen.x_mm - 120.0) < 1e-6
-	assert abs(seen.y_mm - 80.0) < 1e-6
+	assert abs(seen.x_mm - gx) < 1e-6
+	assert abs(seen.y_mm - gy) < 1e-6
+	assert abs(sim.exp.last_scene.ferret.x_mm - 120.0) < 1e-6
 
 
 def test_set_pointer_marks_hud_dirty() -> None:

@@ -117,7 +117,7 @@ function drawThreatRings() {
 }
 
 function drawTravel() {
-	// Why: encoder XY is arena mm; teal box is firmware travel, not Ace FOV.
+	// Why: travel is mapped onto the full FOV; box is the scaled rail window.
 	const z = state.zaber;
 	if (!z || z.x_max == null || z.y_max == null) return;
 	const [x0, y0] = mmToPx(z.x_min || 0, z.y_min || 0);
@@ -243,8 +243,9 @@ function hudZaber(s) {
 		${row("link", z.comm + " RTT " + z.rtt_ms.toFixed(1) + " ms")}
 		${row("busy", String(z.busy), z.busy ? "warn" : "ok")}
 		${row("position", `${z.x_mm.toFixed(1)}, ${z.y_mm.toFixed(1)} mm`)}
-		${row("encoder frame", "arena mm (FOV origin)")}
-		${row("travel", `${(z.x_min || 0).toFixed(0)}–${(z.x_max || 0).toFixed(0)} × ${(z.y_min || 0).toFixed(0)}–${(z.y_max || 0).toFixed(0)} mm`)}
+		${row("encoder", `${(z.enc_x_mm != null ? z.enc_x_mm : z.x_mm).toFixed(1)}, ${(z.enc_y_mm != null ? z.enc_y_mm : z.y_mm).toFixed(1)} mm`)}
+		${row("encoder frame", "rails scaled to full FOV")}
+		${row("travel", `rails ${(z.enc_x_min != null ? z.enc_x_min : 0).toFixed(0)}–${(z.enc_x_max != null ? z.enc_x_max : z.x_max).toFixed(0)} × ${(z.enc_y_min != null ? z.enc_y_min : 0).toFixed(0)}–${(z.enc_y_max != null ? z.enc_y_max : z.y_max).toFixed(0)} mm`)}
 		${row("velocity", `${z.speed_mm_s.toFixed(0)} mm/s  ${z.heading_deg.toFixed(0)}°`)}
 		${row("limits", `${z.max_speed_mm_s} mm/s · ${z.max_accel_mm_s2} mm/s²`)}
 		<ul class="calls">${z.api_calls.map((a) => `<li>${a.name} ${esc(a.detail)}</li>`).join("")}</ul>

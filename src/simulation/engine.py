@@ -12,6 +12,7 @@ from simulation.config import SimConfig, load_sim_config
 from simulation.pylon_sim import SimulatedPylonCamera
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackState, TrialPhase
+from zaber.arena_map import gantry_to_arena, scale_vel, travel_box
 from zaber.factory import open_gantry
 
 
@@ -152,14 +153,14 @@ class HuntSim:
 			"arena": self._arena_snapshot(cam),
 			"ferret_source": "ace" if self._live_ace else "pointer",
 			"ferret_true": _track_dict(self.true_ferret),
-			"ferret_camera": _track_dict(seen),
+			"ferret_camera": _track_dict(self._to_arena_track(seen)),
 			"prey": _track_dict(self._prey_track()),
 			"camera": self._camera_dict(cam),
 			"zaber": self._zaber_dict(),
 			"decision": self._decision_dict(),
 			"scene": _scene_dict(frame, self.last_frame_index),
 			"control_hz": 1000.0 / self.cfg.control_period_ms,
-			"policy": asdict(self.controller._cfg or self.cfg.chase),
+			"policy": self._policy_dict(),
 		}
 
 	def _camera_dict(self, cam) -> dict:
@@ -209,8 +210,9 @@ class HuntSim:
 		)
 
 	def _zaber_dict(self) -> dict:
-		px, py = self.gantry.get_xy()
-		vx, vy = self.gantry.get_velocity()
+		ex, ey = self.gantry.get_xy()
+		evx, evy = self.gantry.get_velocity()
+		px, py, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
 		return {
@@ -220,6 +222,8 @@ class HuntSim:
 			"busy": self.gantry.is_busy(),
 			"x_mm": px,
 			"y_mm": py,
+			"enc_x_mm": ex,
+			"enc_y_mm": ey,
 			"vx_mm_s": vx,
 			"vy_mm_s": vy,
 			"speed_mm_s": spd,
@@ -231,20 +235,18 @@ class HuntSim:
 		}
 
 	def _travel_dict(self) -> dict:
-		# Why: HUD must show encoder mm vs Ace FOV so a short rail is obvious.
-		s = getattr(self.gantry, "settings", None)
-		if s is not None:
-			return {
-				"x_min": float(s.x_min),
-				"x_max": float(s.x_max),
-				"y_min": float(s.y_min),
-				"y_max": float(s.y_max),
-			}
+		# Why: HUD box is the mapped window (full FOV); enc_* is firmware travel.
+		cam = self.cfg.camera
+		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
 		return {
 			"x_min": 0.0,
-			"x_max": float(getattr(self.gantry, "width_mm", self.cfg.camera.width_mm)),
+			"x_max": cam.width_mm,
 			"y_min": 0.0,
-			"y_max": float(getattr(self.gantry, "height_mm", self.cfg.camera.height_mm)),
+			"y_max": cam.height_mm,
+			"enc_x_min": box.x_min,
+			"enc_x_max": box.x_max,
+			"enc_y_min": box.y_min,
+			"enc_y_max": box.y_max,
 		}
 
 	def _decision_dict(self) -> dict:
@@ -266,11 +268,48 @@ class HuntSim:
 		}
 
 	def _prey_track(self) -> TrackState:
-		vx, vy = self.gantry.get_velocity()
-		x, y = self.gantry.get_xy()
+		ex, ey = self.gantry.get_xy()
+		evx, evy = self.gantry.get_velocity()
+		x, y, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
 		return TrackState(x, y, spd, heading, True)
+
+	def _encoder_to_arena(
+		self, x: float, y: float, vx: float, vy: float
+	) -> tuple[float, float, float, float]:
+		cam = self.cfg.camera
+		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
+		ax, ay = gantry_to_arena(x, y, box, cam.width_mm, cam.height_mm)
+		avx, avy = scale_vel(vx, vy, box, cam.width_mm, cam.height_mm, to_arena=True)
+		return ax, ay, avx, avy
+
+	def _to_arena_track(self, t: TrackState) -> TrackState:
+		if not t.valid:
+			return t
+		cam = self.cfg.camera
+		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
+		x, y = gantry_to_arena(t.x_mm, t.y_mm, box, cam.width_mm, cam.height_mm)
+		return TrackState(x, y, t.speed_mm_s, t.direction_deg, True, t.x_px, t.y_px)
+
+	def _policy_dict(self) -> dict:
+		pol = asdict(self.controller._cfg or self.cfg.chase)
+		cam = self.cfg.camera
+		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
+		s = 0.5 * (cam.width_mm / box.width_mm + cam.height_mm / box.height_mm)
+		if s <= 1.01:
+			return pol
+		# Why: rings are drawn in FOV mm; chase gaps stay in rail mm.
+		for key in (
+			"preferred_gap_mm",
+			"min_gap_mm",
+			"max_pull_mm",
+			"wall_margin_mm",
+			"threat_distance_mm",
+			"creep_distance_mm",
+		):
+			pol[key] = float(pol[key]) * s
+		return pol
 
 	def _update_ferret_kinematics(self, dt_s: float) -> None:
 		dx = self.true_ferret.x_mm - self._prev_fx

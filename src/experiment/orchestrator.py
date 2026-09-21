@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import time
 
@@ -11,6 +12,7 @@ from chase.policy import fill_tracking_derived
 from experiment.trial import TrialStateMachine
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackingFrame, TrackState
+from zaber.arena_map import arena_to_gantry, gantry_to_arena, scale_vel, travel_box
 from zaber.protocol import Gantry
 
 
@@ -35,6 +37,8 @@ class Experiment:
 		)
 		self._pipeline = pipeline or TrackingPipeline()
 		self._running = False
+		self._fov_w = width_mm
+		self._fov_h = height_mm
 		self.last_scene: TrackingFrame | None = None
 
 	def start(self) -> None:
@@ -65,7 +69,8 @@ class Experiment:
 		delivered = self._ingest_camera(cam_frame)
 		# Why: encoder is live; refresh toy XY even when the Ace has no new frame.
 		if self.last_scene is not None:
-			self._stamp_encoder_prey(self.last_scene)
+			self._stamp_encoder_prey(self.last_scene, arena=True)
+			self._submit_chase(self.last_scene)
 		self.chase.poll(self._poll_time(t_s, cam_frame))
 		return delivered
 
@@ -87,8 +92,8 @@ class Experiment:
 			trial_phase=self.trial.phase,
 		)
 		scene.quality.ferret_confidence = 1.0
-		self._stamp_encoder_prey(scene)
-		self.chase.submit_frame(scene)
+		self._stamp_encoder_prey(scene, arena=True)
+		self._submit_chase(scene)
 		self.last_scene = scene
 		self.chase.poll(now_s)
 		return scene
@@ -108,8 +113,8 @@ class Experiment:
 			return None
 		prey_xy = self._gantry.get_xy()
 		scene = self._pipeline.process(cam_frame, self.trial.phase, prey_xy)
-		self._stamp_encoder_prey(scene)
-		self.chase.submit_frame(scene)
+		self._stamp_encoder_prey(scene, arena=True)
+		self._submit_chase(scene)
 		self.last_scene = scene
 		return scene
 
@@ -147,9 +152,13 @@ class Experiment:
 		if not callable(fov_fn):
 			return
 		fov = fov_fn()
+		self._fov_w = fov.width_mm
+		self._fov_h = fov.height_mm
 		self.chase.set_workspace(fov.width_mm, fov.height_mm)
 
 	def _apply_gantry_travel(self) -> None:
+		if getattr(self._gantry, "backend", "") != "hardware":
+			return
 		s = getattr(self._gantry, "settings", None)
 		if s is None:
 			return
@@ -167,9 +176,13 @@ class Experiment:
 			return cam_frame.host_time_ns * 1e-9
 		return time.time_ns() * 1e-9
 
-	def _stamp_encoder_prey(self, scene: TrackingFrame) -> None:
+	def _stamp_encoder_prey(self, scene: TrackingFrame, *, arena: bool = False) -> None:
 		x_mm, y_mm = self._gantry.get_xy()
 		vx, vy = self._gantry.get_velocity()
+		if arena:
+			box = travel_box(self._gantry, self._fov_w, self._fov_h)
+			x_mm, y_mm = gantry_to_arena(x_mm, y_mm, box, self._fov_w, self._fov_h)
+			vx, vy = scale_vel(vx, vy, box, self._fov_w, self._fov_h, to_arena=True)
 		spd = math.hypot(vx, vy)
 		scene.prey.x_mm = x_mm
 		scene.prey.y_mm = y_mm
@@ -179,3 +192,25 @@ class Experiment:
 		# Why: encoder prey is trusted; camera prey_confidence is not used for the toy.
 		scene.quality.prey_confidence = 1.0
 		fill_tracking_derived(scene)
+
+	def _submit_chase(self, hud: TrackingFrame) -> None:
+		# Why: chase stays in rail mm; HUD last_scene stays in FOV mm.
+		chase = copy.deepcopy(hud)
+		chase.ferret = self._ferret_to_gantry(hud.ferret)
+		self._stamp_encoder_prey(chase, arena=False)
+		self.chase.submit_frame(chase)
+
+	def _ferret_to_gantry(self, ferret: TrackState) -> TrackState:
+		box = travel_box(self._gantry, self._fov_w, self._fov_h)
+		x_mm, y_mm = arena_to_gantry(
+			ferret.x_mm, ferret.y_mm, box, self._fov_w, self._fov_h
+		)
+		return TrackState(
+			x_mm,
+			y_mm,
+			ferret.speed_mm_s,
+			ferret.direction_deg,
+			ferret.valid,
+			ferret.x_px,
+			ferret.y_px,
+		)
