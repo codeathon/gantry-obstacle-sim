@@ -13,9 +13,9 @@ def configure_instant_camera(cam: object, s: CameraSettings) -> None:
 	_set(cam, "PixelFormat", "Mono8", required=True)
 	_apply_geometry(cam, s)
 	_apply_exposure_gain(cam, s)
-	_set(cam, "AcquisitionFrameRateEnable", s.frame_rate_enable, required=True)
+	_set(cam, "AcquisitionFrameRateEnable", s.frame_rate_enable)
 	if s.frame_rate_enable:
-		_set(cam, "AcquisitionFrameRate", s.frame_rate_fps, required=True)
+		_set(cam, "AcquisitionFrameRate", s.frame_rate_fps)
 	if s.trigger_mode != "Off":
 		raise ValueError("only TriggerMode Off")
 	_set(cam, "TriggerMode", "Off", required=True)
@@ -44,40 +44,48 @@ def _apply_geometry(cam: object, s: CameraSettings) -> None:
 
 
 def _apply_exposure_gain(cam: object, s: CameraSettings) -> None:
-	_set(cam, "BslExposureTimeMode", _exposure_mode(s.exposure_time_mode), required=True)
-	_set(cam, "ExposureAuto", "Continuous" if s.exposure_auto else "Off", required=True)
+	# Why: Bsl* is ace 2; acA1300-200um has ExposureTime/Gain only.
+	_set(cam, "BslExposureTimeMode", _exposure_mode(s.exposure_time_mode))
+	_set(cam, "ExposureAuto", "Continuous" if s.exposure_auto else "Off")
 	if not s.exposure_auto:
 		_set(cam, "ExposureTime", s.exposure_time_us, required=True)
-	_set(cam, "GainAuto", "Continuous" if s.gain_auto else "Off", required=True)
+	_set(cam, "GainAuto", "Continuous" if s.gain_auto else "Off")
 	if not s.gain_auto:
 		_set(cam, "Gain", s.gain_db, required=True)
 
 
 def _apply_throughput(cam: object, s: CameraSettings) -> None:
-	_set(cam, "DeviceLinkThroughputLimitMode", s.device_link_throughput_limit, required=True)
+	# Why: DeviceLinkThroughputLimit is ace 2 USB3; classic Ace may omit it.
+	_set(cam, "DeviceLinkThroughputLimitMode", s.device_link_throughput_limit)
 	if s.device_link_throughput_limit == "On":
 		_set(
 			cam,
 			"DeviceLinkThroughputLimit",
 			int(s.device_link_throughput_mbps * 1e6 / 8.0),
-			required=True,
 		)
 
 
 def _set(cam: object, name: str, value: object, required: bool = False) -> None:
-	# Why: optional GenICam nodes vary by ace 2 firmware; never hard-fail those.
-	try:
-		node = getattr(cam, name)
-		writable = getattr(node, "IsWritable", None)
-		if callable(writable) and not writable():
-			if required:
-				raise RuntimeError(f"{name} is not writable")
-			return
-		setter = getattr(node, "SetValue", None)
-		if callable(setter):
-			setter(value)
-			return
-		setattr(cam, name, value)
-	except Exception:
+	# Why: pypylon GetNode raises LogicalErrorException then often segfaults.
+	node = _genicam_node(cam, name)
+	if node is None:
 		if required:
-			raise
+			raise RuntimeError(f"GenICam node {name} is missing")
+		return
+	writable = getattr(node, "IsWritable", None)
+	if callable(writable) and not writable():
+		if required:
+			raise RuntimeError(f"{name} is not writable")
+		return
+	setter = getattr(node, "SetValue", None)
+	if callable(setter):
+		setter(value)
+		return
+	setattr(cam, name, value)
+
+
+def _genicam_node(cam: object, name: str):
+	try:
+		return getattr(cam, name)
+	except Exception:
+		return None

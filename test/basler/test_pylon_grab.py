@@ -112,6 +112,23 @@ def test_stub_fov_is_json_aoi() -> None:
 	assert abs(fov.height_mm - 1200 * 1.035) < 1e-6
 
 
+def test_classic_ace_configure_skips_missing_bsl_nodes() -> None:
+	# Why: acA1300-200um has no BslExposureTimeMode; GetNode used to abort HuntSim.
+	from basler.pylon_hw import configure_instant_camera
+
+	class _Classic(FakeInstantCamera):
+		def __getattribute__(self, name: str):
+			if name == "BslExposureTimeMode":
+				raise RuntimeError("Node not existing")
+			return super().__getattribute__(name)
+
+	inst = _Classic()
+	configure_instant_camera(inst, _tiny_settings())
+	assert inst.ExposureTime.GetValue() == 3000.0
+	assert inst.Gain.GetValue() == 6.0
+	assert inst.PixelFormat.GetValue() == "Mono8"
+
+
 def test_injected_pylon_configure_and_frame() -> None:
 	inst = FakeInstantCamera()
 	pixels = bytes(range(32))
