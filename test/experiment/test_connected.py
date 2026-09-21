@@ -7,7 +7,7 @@ from experiment.camera_preview import main as camera_preview_main
 from experiment.orchestrator import Experiment
 from experiment.run import main as run_main
 from experiment.trial import TrialStateMachine
-from vision.tracking_frame import TrialPhase
+from vision.tracking_frame import TrackState, TrialPhase
 from zaber.client import ZaberGantry
 
 
@@ -39,6 +39,21 @@ def test_chase_feed_overwrites_prey_from_encoder() -> None:
 	assert scene.prey.valid
 	assert not scene.ferret.valid
 	assert scene.frame_index == 1
+
+
+def test_feed_ferret_mm_bypasses_camera() -> None:
+	# Why: pointer hybrid must not wait for SimulatedPylon grab_to_track.
+	gantry = ZaberGantry()
+	exp = Experiment(gantry, AceCamera())
+	exp.start()
+	gantry.move_absolute(111.0, 222.0)
+	scene = exp.feed_ferret_mm(TrackState(40.0, 50.0, 0, 0, True))
+	exp.shutdown()
+	assert scene.ferret.x_mm == 40.0
+	assert scene.ferret.y_mm == 50.0
+	assert scene.prey.x_mm == 111.0
+	assert scene.quality.ferret_confidence == 1.0
+	assert scene.ferret.valid
 
 
 def test_operator_start_reaches_tracking_frame() -> None:
