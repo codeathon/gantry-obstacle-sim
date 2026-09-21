@@ -236,6 +236,7 @@ function hudCamera(s) {
 }
 
 function hudZaber(s) {
+	// TODO: time graph of prey-toy X,Y from Zaber API encoder mm (z.enc_x_mm / z.enc_y_mm vs t_s).
 	const z = s.zaber;
 	return `
 		<h2>Zaber API</h2>
