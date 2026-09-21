@@ -47,6 +47,8 @@ class ZaberGantry:
 		self._units = None
 		self._last_poll_s = 0.0
 		self._prev_poll_s = 0.0
+		self._cmd_vx = 0.0
+		self._cmd_vy = 0.0
 		self._log: deque[ApiCall] = deque(maxlen=12)
 		# Why: only factory hardware path scans USB; stubs must not open /dev/ttyUSB.
 		self._use_serial = use_serial
@@ -95,9 +97,8 @@ class ZaberGantry:
 		return self._vx, self._vy
 
 	def is_busy(self) -> bool:
-		if self._x_axis is None:
-			return (self._vx * self._vx + self._vy * self._vy) ** 0.5 > 1.0
-		return _busy(self._x_axis) or _busy(self._y_axis)
+		# Why: HUD/chase must not add two is_busy serial RTTs on every snapshot.
+		return (self._vx * self._vx + self._vy * self._vy) ** 0.5 > 1.0
 
 	def step(self, dt_s: float = 0.0, t_s: float = 0.0) -> None:
 		# Why: firmware integrates motion; SimulatedGantry is the one that steps.
@@ -124,6 +125,9 @@ class ZaberGantry:
 	def move_velocity(self, vx_mm_s: float, vy_mm_s: float) -> None:
 		# Why: live hunt is continuous velocity, not discrete flee points.
 		vx_mm_s, vy_mm_s = self._cap_vel(vx_mm_s, vy_mm_s)
+		if self._same_vel_cmd(vx_mm_s, vy_mm_s):
+			return
+		self._cmd_vx, self._cmd_vy = vx_mm_s, vy_mm_s
 		self._note("move_velocity", f"v=({vx_mm_s:.0f},{vy_mm_s:.0f})")
 		if self._x_axis is None:
 			self._vx, self._vy = vx_mm_s, vy_mm_s
@@ -133,6 +137,7 @@ class ZaberGantry:
 	def stop(self) -> None:
 		# Why: trial end and stale frames must decelerate both axes.
 		self._note("stop", "")
+		self._cmd_vx = self._cmd_vy = 0.0
 		if self._x_axis is None:
 			self._vx = self._vy = 0.0
 			return
@@ -154,6 +159,10 @@ class ZaberGantry:
 	def _clip(self, x_mm: float, y_mm: float) -> tuple[float, float]:
 		s = self.settings
 		return clip_xy(x_mm, y_mm, s.x_min, s.x_max, s.y_min, s.y_max)
+
+	def _same_vel_cmd(self, vx: float, vy: float) -> bool:
+		# Why: identical 50 Hz repeats still take two serial RTTs on X-MCC.
+		return abs(vx - self._cmd_vx) < 0.5 and abs(vy - self._cmd_vy) < 0.5
 
 	def _cap_vel(self, vx: float, vy: float) -> tuple[float, float]:
 		s = self.settings

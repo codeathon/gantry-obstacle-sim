@@ -10,7 +10,7 @@ from chase.controller import ChaseController
 from chase.policy import fill_tracking_derived
 from experiment.trial import TrialStateMachine
 from vision.pipeline import TrackingPipeline
-from vision.tracking_frame import TrackingFrame
+from vision.tracking_frame import TrackingFrame, TrackState
 from zaber.protocol import Gantry
 
 
@@ -66,6 +66,30 @@ class Experiment:
 			self._stamp_encoder_prey(self.last_scene)
 		self.chase.poll(self._poll_time(t_s, cam_frame))
 		return delivered
+
+	def feed_ferret_mm(self, ferret: TrackState, t_s: float | None = None) -> TrackingFrame:
+		# Why: pointer hybrid must not wait SimulatedPylon exposure/USB delay.
+		now_s = time.time() if t_s is None else t_s
+		scene = TrackingFrame(
+			frame_index=(self.last_scene.frame_index + 1) if self.last_scene else 1,
+			host_time_ns=int(now_s * 1e9),
+			ferret=TrackState(
+				ferret.x_mm,
+				ferret.y_mm,
+				ferret.speed_mm_s,
+				ferret.direction_deg,
+				True,
+				ferret.x_px,
+				ferret.y_px,
+			),
+			trial_phase=self.trial.phase,
+		)
+		scene.quality.ferret_confidence = 1.0
+		self._stamp_encoder_prey(scene)
+		self.chase.submit_frame(scene)
+		self.last_scene = scene
+		self.chase.poll(now_s)
+		return scene
 
 	def on_operator_key(self, key: str) -> None:
 		self.trial.on_operator_key(key)
