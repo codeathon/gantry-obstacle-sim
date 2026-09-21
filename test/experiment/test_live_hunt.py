@@ -64,6 +64,8 @@ def _mouse_frames() -> list[CameraFrame]:
 	img = bytearray(w * h)
 	# Mouse left of the toy at (20, 16) mm / px with GSD 1.
 	_paint(img, w, 4, 14, 9, 19)
+	# Why: a lone in-frame blob is now the toy; chase needs both objects.
+	_paint(img, w, 18, 14, 23, 19)
 	hit = CameraFrame(
 		frame_index=2,
 		width_px=w,
@@ -202,6 +204,8 @@ def test_ferret_kept_when_toy_maps_elsewhere() -> None:
 	bg = CameraFrame(frame_index=1, width_px=w, height_px=h, pixels=bytes(w * h), grab_ok=True)
 	img = bytearray(w * h)
 	_paint(img, w, 4, 14, 9, 19)
+	# Why: encoder maps to arena (16,16); without a toy blob the mouse is dropped.
+	_paint(img, w, 14, 14, 19, 19)
 	hit = CameraFrame(frame_index=2, width_px=w, height_px=h, pixels=bytes(img), grab_ok=True)
 	gantry = _rail_gantry()
 	exp = Experiment(

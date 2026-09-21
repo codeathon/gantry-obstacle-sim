@@ -6,7 +6,7 @@ import math
 
 from basler.types import CameraFrame
 from vision.detect import AnimalDetector
-from vision.ground_calib import GroundCam, px_to_arena
+from vision.ground_calib import GroundCam, arena_to_px, px_to_arena
 from vision.tracking_frame import TrackingFrame, TrackingQuality, TrackState, TrialPhase
 
 
@@ -37,7 +37,7 @@ class TrackingPipeline:
 		prey_xy_mm: tuple[float, float] | None = None,
 	) -> TrackingFrame:
 		# Why: CameraFrame in, TrackingFrame out — no Pylon or Zaber types.
-		# prey_xy_mm must be arena/FOV mm so detector px = mm / GSD.
+		# prey_xy_mm is arena/FOV mm; live Ace converts that to pixels below.
 		ferret = self._ferret_from_camera(camera_frame, prey_xy_mm)
 		quality = TrackingQuality()
 		if ferret.valid:
@@ -58,8 +58,13 @@ class TrackingPipeline:
 		x_px, y_px = frame.ferret_x_px, frame.ferret_y_px
 		if x_px is None or y_px is None:
 			# Why: live Ace has Mono8 only; ignore the toy blob via encoder XY.
-			hit = self._detector.update(frame, prey_xy_mm)
+			hit = self._detector.update(frame, prey_px=self._prey_px(prey_xy_mm))
 			if hit is None:
+				# Why: a good Ace frame with only the toy must not coast a ghost ferret.
+				if frame.pixels is not None and frame.grab_ok:
+					self._miss += 1
+					self._prev_px = None
+					return TrackState()
 				return self._coast_ferret()
 			x_px, y_px = hit
 		self._miss = 0
@@ -94,6 +99,15 @@ class TrackingPipeline:
 		if self._ground is None:
 			return x_px * self._gsd, y_px * self._gsd
 		return px_to_arena(self._ground, x_px, y_px)
+
+	def _prey_px(
+		self, prey_xy_mm: tuple[float, float] | None
+	) -> tuple[float, float] | None:
+		if prey_xy_mm is None:
+			return None
+		if self._ground is not None:
+			return arena_to_px(self._ground, prey_xy_mm[0], prey_xy_mm[1])
+		return (prey_xy_mm[0] / self._gsd, prey_xy_mm[1] / self._gsd)
 
 	def _motion_from_px(self, x_px: float, y_px: float, host_ns: int) -> tuple[float, float]:
 		# Why: speed is arena mm (plane hit or GSD), not raw px when Charuco is on.

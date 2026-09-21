@@ -13,7 +13,8 @@ class AnimalDetector:
 		self,
 		gsd_mm_per_px: float = 1.035,
 		min_area: float = 200.0,
-		exclude_mm: float = 80.0,
+		# Why: carriage + nearby shadow; 80 mm missed the lab toy blob.
+		exclude_mm: float = 150.0,
 		warmup_frames: int = 30,
 		associator: ObjectAssociator | None = None,
 	) -> None:
@@ -30,10 +31,13 @@ class AnimalDetector:
 		)
 
 	def update(
-		self, frame: CameraFrame, prey_xy_mm: tuple[float, float] | None = None
+		self,
+		frame: CameraFrame,
+		prey_xy_mm: tuple[float, float] | None = None,
+		prey_px: tuple[float, float] | None = None,
 	) -> tuple[float, float] | None:
 		# Why: sim already stamps ferret_x_px; live Ace only has Mono8 bytes.
-		# prey_xy_mm is arena/FOV millimetres (encoder already mapped).
+		# prey_xy_mm is arena/FOV millimetres unless prey_px is already Ace pixels.
 		if frame.pixels is None or not frame.grab_ok:
 			return None
 		self._n += 1
@@ -41,8 +45,7 @@ class AnimalDetector:
 		if self._n <= self._warmup:
 			self._learn(frame, img, 0.01)
 			return None
-		prey_px = None
-		if prey_xy_mm is not None:
+		if prey_px is None and prey_xy_mm is not None:
 			prey_px = (prey_xy_mm[0] / self._gsd, prey_xy_mm[1] / self._gsd)
 		hit = self._centroid(frame, img, prey_px)
 		# Why: pylon-track MOG2 keeps learning after warmup (lr 0.002).
@@ -108,17 +111,37 @@ def _numpy_ferret(img, bg, prey_px, exclude_px: float, min_area: float, associat
 		return None
 	bg_f = bg if getattr(bg, "dtype", None) is not None else np.asarray(bg, dtype=np.float32)
 	mask = np.abs(img.astype(np.float32) - bg_f) > 20.0
-	if prey_px is not None:
-		# Why: encoder disc drops the toy so the ferret centroid is not the carriage.
-		mask &= _away_from_prey(img.shape, prey_px, exclude_px)
 	blobs = _numpy_blobs(mask, min_area)
+	# Why: one FOV blob with the encoder in-frame is the toy, not a ferret.
+	blobs = _drop_toy(blobs, prey_px, img.shape[1], img.shape[0], exclude_px)
 	picked = associator.pick_ferret(blobs, prior_px)
 	if picked is None:
 		return None
 	return picked.x_px, picked.y_px
 
 
-def _numpy_blobs(mask, min_area: float) -> list[Blob]:
+def _drop_toy(
+	blobs: list[Blob],
+	prey_px: tuple[float, float] | None,
+	width: int,
+	height: int,
+	exclude_px: float,
+) -> list[Blob]:
+	if prey_px is None or not blobs:
+		return blobs
+	# Why: Charuco tilt can park the encoder a few px outside the raster.
+	pad = max(exclude_px, 80.0)
+	in_frame = -pad <= prey_px[0] < width + pad and -pad <= prey_px[1] < height + pad
+	if in_frame and len(blobs) == 1:
+		return []
+	r2 = exclude_px * exclude_px
+	return [
+		b for b in blobs
+		if (b.x_px - prey_px[0]) ** 2 + (b.y_px - prey_px[1]) ** 2 > r2
+	]
+
+
+def _numpy_blobs(mask, min_area: float, max_span_px: float = 600.0) -> list[Blob]:
 	import numpy as np
 
 	# Why: 4× downsample keeps CC cheap at 1920×1200 without OpenCV.
@@ -131,28 +154,34 @@ def _numpy_blobs(mask, min_area: float) -> list[Blob]:
 		for x in range(w):
 			if not small[y, x] or seen[y, x]:
 				continue
-			blob = _flood(small, seen, y, x, step)
-			if blob.area_px >= min_area:
+			blob, span = _flood(small, seen, y, x, step)
+			# Why: the moving XXY crossbar is longer than a ferret.
+			if blob.area_px >= min_area and span <= max_span_px:
 				blobs.append(blob)
 	return blobs
 
 
-def _flood(small, seen, y0: int, x0: int, step: int) -> Blob:
+def _flood(small, seen, y0: int, x0: int, step: int) -> tuple[Blob, float]:
 	h, w = small.shape
 	stack = [(y0, x0)]
 	seen[y0, x0] = 1
 	sx = sy = n = 0
+	xmin = xmax = x0
+	ymin = ymax = y0
 	while stack:
 		cy, cx = stack.pop()
 		sx += cx
 		sy += cy
 		n += 1
+		xmin, xmax = min(xmin, cx), max(xmax, cx)
+		ymin, ymax = min(ymin, cy), max(ymax, cy)
 		for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
 			ny, nx = cy + dy, cx + dx
 			if 0 <= ny < h and 0 <= nx < w and small[ny, nx] and not seen[ny, nx]:
 				seen[ny, nx] = 1
 				stack.append((ny, nx))
-	return Blob((sx / n) * step, (sy / n) * step, float(n * step * step))
+	span = max(xmax - xmin, ymax - ymin) * step
+	return Blob((sx / n) * step, (sy / n) * step, float(n * step * step)), span
 
 
 def _away_from_prey(shape, prey_px, exclude_px: float):

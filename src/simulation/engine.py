@@ -213,6 +213,8 @@ class HuntSim:
 		# Why: HUD gold ferret is the Ace blob, not a leftover pointer spawn.
 		seen = scene.ferret
 		if not seen.valid:
+			# Why: toy-only frames must clear a previous ghost ferret on the HUD.
+			self.true_ferret = TrackState()
 			return
 		self.true_ferret = TrackState(
 			seen.x_mm,

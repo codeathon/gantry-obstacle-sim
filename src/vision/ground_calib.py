@@ -97,6 +97,21 @@ def px_to_arena(cam: GroundCam, u: float, v: float) -> tuple[float, float]:
 	return wx - cam.xmin, cam.ymax - wy
 
 
+def world_to_px(cam: GroundCam, wx: float, wy: float) -> tuple[float, float]:
+	# Why: encoder/Charuco world → Ace pixel so the toy disc sits on the carriage.
+	dx, dy, dz = wx - cam.pos[0], wy - cam.pos[1], -cam.pos[2]
+	xc = cam.ax[0] * dx + cam.ax[1] * dy + cam.ax[2] * dz
+	yc = cam.ay[0] * dx + cam.ay[1] * dy + cam.ay[2] * dz
+	zc = cam.az[0] * dx + cam.az[1] * dy + cam.az[2] * dz
+	if abs(zc) < 1e-9:
+		raise ValueError("point behind camera")
+	return cam.fx * xc / zc + cam.cx, cam.fy * yc / zc + cam.cy
+
+
+def arena_to_px(cam: GroundCam, ax: float, ay: float) -> tuple[float, float]:
+	return world_to_px(cam, cam.xmin + ax, cam.ymax - ay)
+
+
 def _cam_from_block(block: dict) -> GroundCam:
 	name = str(block.get("name", ""))
 	serial = name.split("_", 1)[0]

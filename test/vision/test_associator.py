@@ -24,9 +24,9 @@ def test_proximity_keeps_the_same_ferret() -> None:
 	assert hit is near
 
 
-def test_falls_back_to_largest_when_below_live_band() -> None:
-	# Why: 32×32 unit rasters sit under the 200 px live Ace floor.
+def test_rejects_blobs_outside_the_ferret_area_band() -> None:
+	# Why: gantry-beam leftovers sit outside the live Ace ferret area band.
 	assoc = ObjectAssociator()
 	small = Blob(4.0, 4.0, area_px=9.0)
-	assert assoc.pick_ferret([small]) is small
+	assert assoc.pick_ferret([small]) is None
 	assert assoc.pick_ferret([]) is None

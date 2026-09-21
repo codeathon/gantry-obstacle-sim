@@ -2,6 +2,7 @@
 
 from basler.types import CameraFrame
 from vision.ground_calib import (
+	arena_to_px,
 	ground_cam_for_serial,
 	load_ground_cams,
 	overhead_ground_cam,
@@ -59,6 +60,16 @@ def test_image_corners_stay_inside_footprint() -> None:
 		ax, ay = px_to_arena(cam, u, v)
 		assert -1.0 <= ax <= cam.width_mm + 1.0
 		assert -1.0 <= ay <= cam.height_mm + 1.0
+
+
+def test_arena_to_px_inverts_px_to_arena() -> None:
+	# Why: the toy exclude disc is only on the carriage if this round-trips.
+	cam = ground_cam_for_serial("24676894")
+	assert cam is not None
+	ax, ay = px_to_arena(cam, 400.0, 300.0)
+	u, v = arena_to_px(cam, ax, ay)
+	assert abs(u - 400.0) < 0.5
+	assert abs(v - 300.0) < 0.5
 
 
 def test_pipeline_uses_ground_not_ace2_gsd() -> None:

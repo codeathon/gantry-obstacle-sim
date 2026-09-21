@@ -42,8 +42,8 @@ class ObjectAssociator:
 				best = blob
 		if best is not None:
 			return best
-		# Why: 32×32 tests and small AOIs sit below the live ferret area band.
-		return max(blobs, key=lambda b: b.area_px) if blobs else None
+		# Why: a gantry beam/shadow leftover must not become the ferret.
+		return None
 
 
 def _area_ok(area: float, lo: float, hi: float) -> bool:
