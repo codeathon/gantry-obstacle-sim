@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import time
 
+from dataclasses import replace
+
 from basler.fov import fov_from_camera, fov_from_settings
 from basler.load import load_camera_config
 from basler.optics import ACE_MODEL, GRAB_STRATEGY
@@ -12,6 +14,7 @@ from basler.pylon import load_pylon
 from basler.pylon_hw import configure_instant_camera
 from basler.settings import CameraSettings
 from basler.types import CameraFov, CameraFrame
+from vision.ground_calib import GroundCam, ground_cam_for_serial
 
 
 class PylonAceCamera:
@@ -28,6 +31,7 @@ class PylonAceCamera:
 		self.settings = settings if settings is not None else load_camera_config()
 		self.backend = "pylon"
 		self.model = ACE_MODEL
+		self.serial = ""
 		self.timeout_ms = timeout_ms
 		self.GrabStrategy = GRAB_STRATEGY
 		self.PixelFormat = "Mono8"
@@ -49,12 +53,17 @@ class PylonAceCamera:
 			self._cam = self._injected
 			_call(self._cam, "Open")
 			self.model = str(getattr(self._cam, "model", ACE_MODEL))
+			self.serial = str(getattr(self._cam, "serial", "") or _serial_of(self._cam))
 			return
 		self._open_device()
 
 	def configure(self) -> None:
+		ground = ground_cam_for_serial(self.serial)
+		if ground is not None:
+			# Why: camera_config.json is 1920×1200; acA1300-200um is 1280×1024.
+			self.settings = replace(self.settings, width=ground.width_px, height=ground.height_px)
 		configure_instant_camera(self._require(), self.settings)
-		self._fov = fov_from_camera(self._require(), self.model)
+		self._fov = _fov_after_configure(self._require(), self.model, ground)
 
 	def start_grabbing(self) -> None:
 		# Why: LatestImageOnly drops stale USB frames, like pylon-track.
@@ -114,6 +123,7 @@ class PylonAceCamera:
 		self._cam = _create_instant_camera(pylon)
 		_call(self._cam, "Open")
 		self.model = _model_name(self._cam)
+		self.serial = _serial_of(self._cam)
 
 	def _retrieve(self):
 		cam = self._require()
@@ -163,6 +173,29 @@ def _pick_device(devices: list, serial: str):
 		if sn == serial:
 			return info
 	raise RuntimeError(f"no Basler camera serial {serial}")
+
+
+def _fov_after_configure(cam: object, model: str, ground: GroundCam | None) -> CameraFov:
+	fov = fov_from_camera(cam, model)
+	if ground is None:
+		return fov
+	return CameraFov(
+		width_px=fov.width_px or ground.width_px,
+		height_px=fov.height_px or ground.height_px,
+		offset_x=fov.offset_x,
+		offset_y=fov.offset_y,
+		gsd_mm_per_px=ground.gsd_mm_per_px,
+		model=model,
+	)
+
+
+def _serial_of(cam: object) -> str:
+	info = getattr(cam, "GetDeviceInfo", None)
+	if callable(info):
+		get_sn = getattr(info(), "GetSerialNumber", None)
+		if callable(get_sn):
+			return str(get_sn())
+	return os.environ.get("PYLON_SERIAL") or os.environ.get("PYLON_CAMERA") or ""
 
 
 def _model_name(cam: object) -> str:

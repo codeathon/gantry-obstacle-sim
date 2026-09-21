@@ -160,6 +160,13 @@ class Experiment:
 			step(dt_s, t_s)
 
 	def _apply_live_fov(self) -> None:
+		ground = getattr(self._pipeline, "_ground", None)
+		if ground is not None:
+			# Why: Charuco footprint is the arena, not a2A1920 Width×1.035.
+			self._fov_w = ground.width_mm
+			self._fov_h = ground.height_mm
+			self.chase.set_workspace(ground.width_mm, ground.height_mm)
+			return
 		fov_fn = getattr(self._grabber, "fov", None)
 		if not callable(fov_fn):
 			return

@@ -177,6 +177,24 @@ def test_hardware_pointer_skips_ace_delay() -> None:
 	assert abs(sim.exp.last_scene.ferret.x_mm - 120.0) < 1e-6
 
 
+def test_charuco_serial_maps_ferret_off_ace2_gsd() -> None:
+	# Why: lab Ace is acA1300-200um 24676894, not a2A1920 × 1.035.
+	grabber = _LiveGrabber(_ace_frames())
+	grabber.serial = "24676894"
+	sim = HuntSim(grabber=grabber)
+	sim.controller._period_s = 0.0
+	sim.trial = TrialPhase.running
+	for _ in range(40):
+		sim.step(0.001)
+	snap = sim.snapshot()
+	seen = sim.controller._latest.ferret
+	assert snap["ferret_source"] == "ace"
+	assert snap["arena"]["width_px"] == 1280
+	assert 0.80 < snap["arena"]["gsd_mm_per_px"] < 0.95
+	assert seen.valid
+	assert abs(seen.x_mm - 7.5 * 1.035) > 1.0
+
+
 def test_ace_ferret_and_encoder_toy_share_arena() -> None:
 	# Why: chase must see Ace ferret + Zaber toy in the same mapped arena.
 	g = ZaberGantry(

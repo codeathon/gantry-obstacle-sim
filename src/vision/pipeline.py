@@ -6,6 +6,7 @@ import math
 
 from basler.types import CameraFrame
 from vision.detect import AnimalDetector
+from vision.ground_calib import GroundCam, px_to_arena
 from vision.tracking_frame import TrackingFrame, TrackingQuality, TrackState, TrialPhase
 
 
@@ -15,9 +16,11 @@ class TrackingPipeline:
 		gsd_mm_per_px: float = 1.035,
 		fps: float = 200.0,
 		detector: AnimalDetector | None = None,
+		ground: GroundCam | None = None,
 	) -> None:
-		# Why: pylon-track pos_mm = pos_px * GSD; speed from px delta * fps * GSD.
+		# Why: pylon-track pos_mm = pos_px * GSD unless Charuco ground is loaded.
 		self._gsd = gsd_mm_per_px
+		self._ground = ground
 		self._fps = fps
 		self._prev_px: tuple[float, float] | None = None
 		self._prev_ns = 0
@@ -69,21 +72,17 @@ class TrackingPipeline:
 			self._prev_px = None
 			return TrackState()
 		x_px, y_px = self._prev_px
-		return TrackState(
-			x_mm=x_px * self._gsd,
-			y_mm=y_px * self._gsd,
-			valid=True,
-			x_px=x_px,
-			y_px=y_px,
-		)
+		x_mm, y_mm = self._px_to_mm(x_px, y_px)
+		return TrackState(x_mm=x_mm, y_mm=y_mm, valid=True, x_px=x_px, y_px=y_px)
 
 	def _track_px(self, x_px: float, y_px: float, host_ns: int) -> TrackState:
 		speed, direction = self._motion_from_px(x_px, y_px, host_ns)
 		self._prev_px = (x_px, y_px)
 		self._prev_ns = host_ns
+		x_mm, y_mm = self._px_to_mm(x_px, y_px)
 		return TrackState(
-			x_mm=x_px * self._gsd,
-			y_mm=y_px * self._gsd,
+			x_mm=x_mm,
+			y_mm=y_mm,
 			speed_mm_s=speed,
 			direction_deg=direction,
 			valid=True,
@@ -91,17 +90,22 @@ class TrackingPipeline:
 			y_px=y_px,
 		)
 
+	def _px_to_mm(self, x_px: float, y_px: float) -> tuple[float, float]:
+		if self._ground is None:
+			return x_px * self._gsd, y_px * self._gsd
+		return px_to_arena(self._ground, x_px, y_px)
+
 	def _motion_from_px(self, x_px: float, y_px: float, host_ns: int) -> tuple[float, float]:
-		# Why: mimic tracker velocity from successive detections, not world truth.
+		# Why: speed is arena mm (plane hit or GSD), not raw px when Charuco is on.
 		if self._prev_px is None:
 			return 0.0, 0.0
 		dt_s = (host_ns - self._prev_ns) * 1e-9
 		if dt_s < 1e-6:
 			dt_s = 1.0 / max(self._fps, 1.0)
-		dx_px = x_px - self._prev_px[0]
-		dy_px = y_px - self._prev_px[1]
-		speed = math.hypot(dx_px, dy_px) / dt_s * self._gsd
+		x0, y0 = self._px_to_mm(*self._prev_px)
+		x1, y1 = self._px_to_mm(x_px, y_px)
+		speed = math.hypot(x1 - x0, y1 - y0) / dt_s
 		direction = 0.0
 		if speed > 5.0:
-			direction = math.degrees(math.atan2(-dy_px, dx_px))
+			direction = math.degrees(math.atan2(-(y1 - y0), x1 - x0))
 		return speed, direction

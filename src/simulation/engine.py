@@ -10,6 +10,7 @@ from basler.pylon import want_ace
 from experiment.orchestrator import Experiment
 from simulation.config import SimConfig, load_sim_config
 from simulation.pylon_sim import SimulatedPylonCamera
+from vision.ground_calib import GroundCam, ground_cam_for_serial
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackState, TrialPhase
 from zaber.arena_map import gantry_to_arena, scale_vel, travel_box
@@ -72,15 +73,19 @@ class HuntSim:
 
 	def _bind_experiment(self, cam) -> Experiment:
 		# Why: same Experiment chase_feed as hardware; sim only supplies fakes.
+		ground = _ground_for_camera(self.camera)
+		gsd = ground.gsd_mm_per_px if ground else cam.gsd_mm_per_px
+		width_mm = ground.width_mm if ground else cam.width_mm
+		height_mm = ground.height_mm if ground else cam.height_mm
 		exp = Experiment(
 			self.gantry,
 			self.camera,
 			cfg=self.cfg.chase,
-			width_mm=cam.width_mm,
-			height_mm=cam.height_mm,
+			width_mm=width_mm,
+			height_mm=height_mm,
 			period_ms=self.cfg.control_period_ms,
 			stale_ms=self.cfg.stale_frame_ms,
-			pipeline=TrackingPipeline(cam.gsd_mm_per_px, cam.frame_rate_fps),
+			pipeline=TrackingPipeline(gsd, cam.frame_rate_fps, ground=ground),
 		)
 		exp.start()
 		return exp
@@ -183,6 +188,15 @@ class HuntSim:
 		}
 
 	def _arena_snapshot(self, cam) -> dict:
+		ground = _ground_for_camera(self.camera)
+		if ground is not None:
+			return {
+				"width_mm": ground.width_mm,
+				"height_mm": ground.height_mm,
+				"width_px": ground.width_px,
+				"height_px": ground.height_px,
+				"gsd_mm_per_px": ground.gsd_mm_per_px,
+			}
 		fov_fn = getattr(self.camera, "fov", None)
 		if callable(fov_fn):
 			fov = fov_fn()
@@ -354,6 +368,16 @@ def _track_dict(t: TrackState) -> dict:
 		"direction_deg": t.direction_deg,
 		"valid": t.valid,
 	}
+
+
+def _ground_for_camera(camera) -> GroundCam | None:
+	# Why: only the live Ace serial (or PYLON_SERIAL on a pylon grabber).
+	serial = str(getattr(camera, "serial", "") or "")
+	if not serial and getattr(camera, "backend", "") == "pylon":
+		import os
+
+		serial = os.environ.get("PYLON_SERIAL") or os.environ.get("PYLON_CAMERA") or ""
+	return ground_cam_for_serial(serial)
 
 
 def _api_call_dicts(gantry) -> list[dict]:
