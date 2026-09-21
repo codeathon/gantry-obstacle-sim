@@ -7,6 +7,7 @@ const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
 let state = null;
 let pointerMm = null;
+let ptrDirty = false;
 
 ws.onmessage = (ev) => {
 	state = JSON.parse(ev.data);
@@ -24,6 +25,8 @@ function syncHint(s) {
 	if (!el) return;
 	if (s.ferret_source === "ace") {
 		el.textContent = "Live Ace blob is the ferret. Pointer is ignored. Grey ghost is the chase pose. Toy is the Zaber encoder.";
+	} else if (s.zaber && s.zaber.backend === "hardware") {
+		el.textContent = "Pointer is the ferret (no Ace delay). Toy is the X-MCC encoder. Start trial (S) to chase.";
 	}
 }
 
@@ -38,8 +41,18 @@ canvas.addEventListener("mousemove", (e) => {
 		x_mm: nx * state.arena.width_mm,
 		y_mm: ny * state.arena.height_mm,
 	};
-	sendJson({ type: "pointer", ...pointerMm });
+	// Why: draw locally now; rAF batches WS so serial chase is not flooded.
+	ptrDirty = true;
+	draw();
 });
+
+function pumpPointer() {
+	requestAnimationFrame(pumpPointer);
+	if (!ptrDirty || !pointerMm) return;
+	ptrDirty = false;
+	sendJson({ type: "pointer", ...pointerMm });
+}
+pumpPointer();
 
 document.querySelectorAll("[data-trial]").forEach((btn) => {
 	btn.addEventListener("click", () => sendJson({ type: "trial", cmd: btn.dataset.trial }));
@@ -126,11 +139,15 @@ function drawGhost() {
 
 function drawFerret() {
 	const f = state.ferret_true;
-	if (!f.valid) return;
-	const [x, y] = mmToPx(f.x_mm, f.y_mm);
+	// Why: pointer hybrid should not wait for the next HUD snapshot.
+	const src = state.ferret_source !== "ace" && pointerMm
+		? { x_mm: pointerMm.x_mm, y_mm: pointerMm.y_mm, direction_deg: f.direction_deg, valid: true }
+		: f;
+	if (!src.valid) return;
+	const [x, y] = mmToPx(src.x_mm, src.y_mm);
 	ctx.fillStyle = "#e2b84a";
 	blob(x, y, 8);
-	heading(x, y, f.direction_deg, "#e2b84a");
+	heading(x, y, src.direction_deg, "#e2b84a");
 }
 
 function drawPrey() {
@@ -176,11 +193,17 @@ function renderHud() {
 	hud.innerHTML = hudCamera(s) + hudZaber(s) + hudAnimals(s) + hudDecision(s);
 }
 
+function ferretSourceLabel(s) {
+	if (s.ferret_source === "ace") return "live Ace blob";
+	if (s.zaber && s.zaber.backend === "hardware") return "pointer (no Ace delay)";
+	return "pointer delay model";
+}
+
 function hudCamera(s) {
 	const c = s.camera;
 	return `
 		<h2>Basler / pylon</h2>
-		${row("ferret source", s.ferret_source === "ace" ? "live Ace blob" : "pointer delay model", s.ferret_source === "ace" ? "ok" : "")}
+		${row("ferret source", ferretSourceLabel(s), s.ferret_source === "ace" || (s.zaber && s.zaber.backend === "hardware") ? "ok" : "")}
 		${row("model", c.model)}
 		${row("backend", c.backend || "sim", c.backend === "pylon" ? "ok" : "")}
 		${row("format", `${c.pixel_format} ${s.arena.width_px}×${s.arena.height_px}`)}

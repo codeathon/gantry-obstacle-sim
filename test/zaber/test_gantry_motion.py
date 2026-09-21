@@ -188,10 +188,24 @@ def test_lockstep_binds_x() -> None:
 	assert y_ax is dev.axes[2]
 
 
-def test_is_busy_reads_axes() -> None:
-	x, y = FakeAxis(), FakeAxis()
-	x.busy = True
-	assert _gantry(x, y).is_busy()
+def test_is_busy_uses_encoder_speed() -> None:
+	# Why: axis is_busy is a serial RTT; HUD uses cached encoder delta instead.
+	x, y = FakeAxis(50.0), FakeAxis(50.0)
+	g = _gantry(x, y, x_min=0, x_max=200, y_min=0, y_max=200, max_speed_mm_s=1000)
+	assert not g.is_busy()
+	g._vx, g._vy = 12.0, 0.0
+	assert g.is_busy()
+
+
+def test_duplicate_move_velocity_skips_serial() -> None:
+	x, y = FakeAxis(50.0), FakeAxis(50.0)
+	g = _gantry(x, y, x_min=0, x_max=200, y_min=0, y_max=200, max_speed_mm_s=1000)
+	g.move_velocity(12.0, -3.0)
+	n = x.calls.count("move_velocity")
+	g.move_velocity(12.0, -3.0)
+	assert x.calls.count("move_velocity") == n
+	g.move_velocity(20.0, -3.0)
+	assert x.calls.count("move_velocity") == n + 1
 
 
 def test_units_kwargs_on_injected_axis() -> None:
