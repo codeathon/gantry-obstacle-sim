@@ -151,6 +151,35 @@ def test_hardware_caps_speed() -> None:
 	assert y.vel == pytest.approx(0.0)
 
 
+def test_zero_firmware_maxspeed_is_ignored() -> None:
+	class _Spd:
+		def get(self, name, unit=None):
+			del unit
+			if name == "maxspeed":
+				return 0.0
+			raise KeyError(name)
+
+	x, y = FakeAxis(50.0), FakeAxis(50.0)
+	x.settings = _Spd()
+	y.settings = _Spd()
+	g = _gantry(x, y, max_speed_mm_s=1000, x_min=0, x_max=200, y_min=0, y_max=200)
+	assert g.settings.max_speed_mm_s == 1000
+
+
+def test_move_velocity_lockstep_without_unit_kw() -> None:
+	class _VelOnly(FakeAxis):
+		def move_velocity(self, velocity):
+			self.calls.append("move_velocity")
+			self.vel = float(velocity)
+
+	x, y = _VelOnly(50.0), _VelOnly(50.0)
+	g = _gantry(x, y, x_min=0, x_max=200, y_min=0, y_max=200, max_speed_mm_s=1000)
+	g._units = _FakeUnits()
+	g.move_velocity(12.0, -3.0)
+	assert x.vel == 12.0
+	assert "move_velocity_error" not in g.calls
+
+
 def test_hardware_clips_absolute() -> None:
 	x, y = FakeAxis(), FakeAxis()
 	g = _gantry(x, y, x_min=0, x_max=100, y_min=0, y_max=80)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
+import sys
 import time
 
 from basler.protocol import AceGrabber
@@ -76,10 +77,15 @@ class Experiment:
 
 	def feed_ferret_mm(self, ferret: TrackState, t_s: float | None = None) -> TrackingFrame:
 		# Why: pointer hybrid must not wait SimulatedPylon exposure/USB delay.
-		now_s = time.time() if t_s is None else t_s
+		if t_s is None:
+			now_ns = time.time_ns()
+			now_s = now_ns * 1e-9
+		else:
+			now_s = t_s
+			now_ns = int(t_s * 1e9)
 		scene = TrackingFrame(
 			frame_index=(self.last_scene.frame_index + 1) if self.last_scene else 1,
-			host_time_ns=int(now_s * 1e9),
+			host_time_ns=now_ns,
 			ferret=TrackState(
 				ferret.x_mm,
 				ferret.y_mm,
@@ -167,6 +173,10 @@ class Experiment:
 			float(getattr(s, "x_max", self.chase._w)),
 			float(getattr(s, "y_min", 0.0)),
 			float(getattr(s, "y_max", self.chase._h)),
+		)
+		print(
+			f"Zaber travel {s.x_min:.1f}–{s.x_max:.1f} × {s.y_min:.1f}–{s.y_max:.1f} mm",
+			file=sys.stderr,
 		)
 
 	def _poll_time(self, t_s: float | None, cam_frame) -> float:

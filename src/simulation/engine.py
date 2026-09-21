@@ -58,6 +58,7 @@ class HuntSim:
 		self._prev_fx = self.true_ferret.x_mm
 		self._prev_fy = self.true_ferret.y_mm
 		self._hud_dirty = False
+		self._loop_error = ""
 		# Why: SimulatedGantry unless PREY_ZABER / use_hardware finds an X-MCC.
 		self.gantry = gantry if gantry is not None else open_gantry(self.cfg)
 		self.camera = grabber if grabber is not None else _select_camera(cam)
@@ -230,6 +231,7 @@ class HuntSim:
 			"heading_deg": heading,
 			"max_speed_mm_s": self.cfg.zaber.max_speed_mm_s,
 			"max_accel_mm_s2": self.cfg.zaber.max_accel_mm_s2,
+			"loop_error": self._loop_error,
 			**self._travel_dict(),
 			"api_calls": _api_call_dicts(self.gantry),
 		}

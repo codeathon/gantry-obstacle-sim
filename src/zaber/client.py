@@ -239,7 +239,10 @@ class ZaberGantry:
 		s.y_min, s.y_max = _travel_mm(self._y_axis, self._units, s.y_min, s.y_max)
 		vx = _maxspeed_mm_s(self._x_axis, self._units, s.max_speed_mm_s)
 		vy = _maxspeed_mm_s(self._y_axis, self._units, s.max_speed_mm_s)
-		s.max_speed_mm_s = min(s.max_speed_mm_s, vx, vy)
+		# Why: a 0 or native-unit maxspeed read capped every move_velocity to 0.
+		for cand in (vx, vy):
+			if cand > 10.0:
+				s.max_speed_mm_s = min(s.max_speed_mm_s, cand)
 
 	def _move_abs_hw(
 		self, x_mm: float, y_mm: float, speed: float, accel: float, wait: bool
@@ -259,14 +262,12 @@ class ZaberGantry:
 		self._refresh(force=True)
 
 	def _move_vel_hw(self, vx: float, vy: float) -> None:
-		units = self._units
-		# Why: default 2500 mm/s² accel is often past firmware max (BADDATA).
-		if units is not None:
-			self._x_axis.move_velocity(vx, units.VELOCITY_MILLIMETRES_PER_SECOND)
-			self._y_axis.move_velocity(vy, units.VELOCITY_MILLIMETRES_PER_SECOND)
-			return
-		self._x_axis.move_velocity(vx)
-		self._y_axis.move_velocity(vy)
+		# Why: lockstep signatures differ; a throw used to kill the web hunt loop.
+		try:
+			_axis_move_vel(self._x_axis, vx, self._units)
+			_axis_move_vel(self._y_axis, vy, self._units)
+		except Exception as exc:
+			self._note("move_velocity_error", str(exc)[:80])
 
 	def _refresh(self, force: bool = False) -> None:
 		if self._x_axis is None:
@@ -386,6 +387,27 @@ def _move_kw(units, speed: float, accel: float, cap_mm_s: float) -> dict:
 		kw["acceleration"] = accel
 		kw["acceleration_unit"] = units.ACCELERATION_MILLIMETRES_PER_SECOND_SQUARED
 	return kw
+
+
+def _axis_move_vel(axis, vel: float, units) -> None:
+	# Why: Lockstep.move_velocity often has no unit/wait kwargs (TypeError).
+	if units is not None:
+		try:
+			axis.move_velocity(
+				vel, units.VELOCITY_MILLIMETRES_PER_SECOND, wait_until_idle=False
+			)
+			return
+		except TypeError:
+			pass
+		try:
+			axis.move_velocity(vel, units.VELOCITY_MILLIMETRES_PER_SECOND)
+			return
+		except TypeError:
+			pass
+	try:
+		axis.move_velocity(vel, wait_until_idle=False)
+	except TypeError:
+		axis.move_velocity(vel)
 
 
 def _position(axis, units) -> float:
