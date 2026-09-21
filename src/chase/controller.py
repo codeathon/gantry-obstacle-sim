@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import time
 
+from chase.bounds import ArenaBounds, bounds_from_size, fit_chase_policy
+from chase.config import ChasePolicyConfig
 from chase.decision import ChaseDecision
 from chase.policy import compute_chase_decision
 from vision.tracking_frame import TrackingFrame
@@ -22,7 +24,9 @@ class ChaseController:
 		stale_ms: float = 80.0,
 	) -> None:
 		self._gantry = gantry
+		self._cfg_src = cfg
 		self._cfg = cfg
+		self._bounds = bounds_from_size(width_mm, height_mm)
 		self._w = width_mm
 		self._h = height_mm
 		self._period_s = period_ms * 1e-3
@@ -35,8 +39,18 @@ class ChaseController:
 
 	def set_workspace(self, width_mm: float, height_mm: float) -> None:
 		# Why: live Ace AOI may differ from sim.json after configure.
-		self._w = width_mm
-		self._h = height_mm
+		self.set_travel(0.0, width_mm, 0.0, height_mm)
+
+	def set_travel(self, x_min: float, x_max: float, y_min: float, y_max: float) -> None:
+		# Why: prey walls are firmware rails; Ace FOV is only the ferret frame.
+		self._bounds = ArenaBounds(x_min, x_max, y_min, y_max)
+		self._w = self._bounds.width_mm
+		self._h = self._bounds.height_mm
+		self._refit()
+
+	def _refit(self) -> None:
+		if isinstance(self._cfg_src, ChasePolicyConfig):
+			self._cfg = fit_chase_policy(self._cfg_src, self._bounds)
 
 	def submit_frame(self, frame: TrackingFrame) -> None:
 		# Why: camera thread copies latest frame under a lock, like pylon-track.
@@ -62,7 +76,9 @@ class ChaseController:
 
 	def _apply(self, frame: TrackingFrame) -> None:
 		t0 = time.perf_counter()
-		decision = compute_chase_decision(frame, self._cfg, self._w, self._h)
+		decision = compute_chase_decision(
+			frame, self._cfg, self._w, self._h, self._bounds
+		)
 		self.last_decision_ms = (time.perf_counter() - t0) * 1e3
 		self.last_decision = decision
 		if not decision.enable_motion:

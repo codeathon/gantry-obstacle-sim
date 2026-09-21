@@ -77,6 +77,7 @@ function draw() {
 	ctx.fillStyle = "#0d0f0c";
 	ctx.fillRect(0, 0, w, h);
 	drawGrid();
+	drawTravel();
 	drawThreatRings();
 	drawCone();
 	drawFlee();
@@ -113,10 +114,24 @@ function drawThreatRings() {
 	circle(cx, cy, pref * gsd);
 	ctx.strokeStyle = "rgba(211,107,94,0.3)";
 	circle(cx, cy, minG * gsd);
-	// Wall keep-out band (arena edge margin).
-	const m = (state.policy.wall_margin_mm || 280) * gsd;
-	ctx.strokeStyle = "rgba(126,200,196,0.2)";
-	ctx.strokeRect(m, m, canvas.width - 2 * m, canvas.height - 2 * m);
+}
+
+function drawTravel() {
+	// Why: encoder XY is arena mm; teal box is firmware travel, not Ace FOV.
+	const z = state.zaber;
+	if (!z || z.x_max == null || z.y_max == null) return;
+	const [x0, y0] = mmToPx(z.x_min || 0, z.y_min || 0);
+	const [x1, y1] = mmToPx(z.x_max, z.y_max);
+	ctx.strokeStyle = "rgba(126,200,196,0.5)";
+	ctx.lineWidth = 2;
+	ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+	const m = state.policy.wall_margin_mm || 0;
+	if (m <= 0) return;
+	const [ix0, iy0] = mmToPx((z.x_min || 0) + m, (z.y_min || 0) + m);
+	const [ix1, iy1] = mmToPx(z.x_max - m, z.y_max - m);
+	ctx.strokeStyle = "rgba(126,200,196,0.22)";
+	ctx.lineWidth = 1;
+	ctx.strokeRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
 }
 
 function drawCone() {
@@ -228,6 +243,8 @@ function hudZaber(s) {
 		${row("link", z.comm + " RTT " + z.rtt_ms.toFixed(1) + " ms")}
 		${row("busy", String(z.busy), z.busy ? "warn" : "ok")}
 		${row("position", `${z.x_mm.toFixed(1)}, ${z.y_mm.toFixed(1)} mm`)}
+		${row("encoder frame", "arena mm (FOV origin)")}
+		${row("travel", `${(z.x_min || 0).toFixed(0)}–${(z.x_max || 0).toFixed(0)} × ${(z.y_min || 0).toFixed(0)}–${(z.y_max || 0).toFixed(0)} mm`)}
 		${row("velocity", `${z.speed_mm_s.toFixed(0)} mm/s  ${z.heading_deg.toFixed(0)}°`)}
 		${row("limits", `${z.max_speed_mm_s} mm/s · ${z.max_accel_mm_s2} mm/s²`)}
 		<ul class="calls">${z.api_calls.map((a) => `<li>${a.name} ${esc(a.detail)}</li>`).join("")}</ul>

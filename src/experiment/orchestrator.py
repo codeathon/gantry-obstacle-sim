@@ -44,6 +44,8 @@ class Experiment:
 		self._grabber.open()
 		self._grabber.configure()
 		self._apply_live_fov()
+		# Why: FOV is ferret space; prey keep-away must use X-MCC travel.
+		self._apply_gantry_travel()
 		self._grabber.start_grabbing()
 		self._running = True
 
@@ -146,6 +148,17 @@ class Experiment:
 			return
 		fov = fov_fn()
 		self.chase.set_workspace(fov.width_mm, fov.height_mm)
+
+	def _apply_gantry_travel(self) -> None:
+		s = getattr(self._gantry, "settings", None)
+		if s is None:
+			return
+		self.chase.set_travel(
+			float(getattr(s, "x_min", 0.0)),
+			float(getattr(s, "x_max", self.chase._w)),
+			float(getattr(s, "y_min", 0.0)),
+			float(getattr(s, "y_max", self.chase._h)),
+		)
 
 	def _poll_time(self, t_s: float | None, cam_frame) -> float:
 		if t_s is not None:

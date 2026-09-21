@@ -62,6 +62,26 @@ def test_far_reels_back_to_keep_hunt_alive():
 	assert d.target_vx_mm_s < 0
 
 
+def test_short_travel_does_not_pin_x_to_fov_center():
+	# Why: FOV walls + firmware x_max made chase command +x forever (Y-only motion).
+	from chase.bounds import ArenaBounds, fit_chase_policy
+
+	cfg = _cfg()
+	box = ArenaBounds(0.0, 300.0, 0.0, 200.0)
+	fitted = fit_chase_policy(cfg.chase, box)
+	assert fitted.preferred_gap_mm < cfg.chase.preferred_gap_mm
+	assert fitted.wall_margin_mm < 280.0
+	d = compute_chase_decision(
+		_scene(1500, 100, 300, 100, heading=0.0, speed=100.0),
+		fitted,
+		box.width_mm,
+		box.height_mm,
+		box,
+	)
+	assert d.enable_motion
+	assert d.target_vx_mm_s <= 0.0
+
+
 def test_corner_pushes_inward():
 	cfg = _cfg()
 	d = compute_chase_decision(

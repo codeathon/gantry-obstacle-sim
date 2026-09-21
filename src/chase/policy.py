@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 
+from chase.bounds import ArenaBounds, bounds_from_size
 from chase.config import ChasePolicyConfig
 from chase.decision import ChaseDecision
 from vision.tracking_frame import TrackingFrame, TrialPhase
@@ -48,6 +49,7 @@ def compute_chase_decision(
 	cfg: object,
 	width_mm: float,
 	height_mm: float,
+	bounds: ArenaBounds | None = None,
 ) -> ChaseDecision:
 	# Why: TrackingFrame → velocity command; idle unless TrialPhase.running.
 	out = ChaseDecision(decision_time_ns=scene.host_time_ns)
@@ -61,14 +63,14 @@ def compute_chase_decision(
 		# Why: Ace-only dry runs have no keep-away gains yet.
 		out.reason = "stub_idle"
 		return out
-	return _engage(scene, cfg, width_mm, height_mm, out)
+	box = bounds or bounds_from_size(width_mm, height_mm)
+	return _engage(scene, cfg, box, out)
 
 
 def _engage(
 	scene: TrackingFrame,
 	cfg: object,
-	width_mm: float,
-	height_mm: float,
+	box: ArenaBounds,
 	out: ChaseDecision,
 ) -> ChaseDecision:
 	assert isinstance(cfg, ChasePolicyConfig)
@@ -76,7 +78,7 @@ def _engage(
 		out.reason = "low_track_confidence"
 		return out
 	out.enable_motion = True
-	ax, ay, reason = _engage_accel(scene, cfg, width_mm, height_mm, out)
+	ax, ay, reason = _engage_accel(scene, cfg, box, out)
 	out.reason = reason
 	# Why: convert soft accel (mm/s² scale) to a capped velocity command for Zaber.
 	vx = ax * cfg.velocity_gain_s
@@ -97,16 +99,15 @@ def _engage(
 def _engage_accel(
 	scene: TrackingFrame,
 	cfg: ChasePolicyConfig,
-	width_mm: float,
-	height_mm: float,
+	box: ArenaBounds,
 	out: ChaseDecision,
 ) -> tuple[float, float, str]:
 	px, py = scene.prey.x_mm, scene.prey.y_mm
 	fx, fy = scene.ferret.x_mm, scene.ferret.y_mm
-	ux, uy, dist = _prey_away_unit(px, py, fx, fy, width_mm, height_mm)
+	ux, uy, dist = _prey_away_unit(px, py, fx, fy, box)
 	rx, ry, tag = _gap_radial(ux, uy, dist, cfg, out)
-	tx, ty, lateral = _center_slip(ux, uy, px, py, width_mm, height_mm, scene, cfg)
-	wx, wy, wall = _wall_push(px, py, width_mm, height_mm, cfg)
+	tx, ty, lateral = _center_slip(ux, uy, px, py, box, scene, cfg)
+	wx, wy, wall = _wall_push(px, py, box, cfg)
 	out.wall_push = wall
 	out.approach_threat = _clamp01(max(0.0, scene.closing_speed_mm_s) / 800.0)
 	out.cone_threat = wall
@@ -118,13 +119,13 @@ def _engage_accel(
 
 
 def _prey_away_unit(
-	px: float, py: float, fx: float, fy: float, width_mm: float, height_mm: float
+	px: float, py: float, fx: float, fy: float, box: ArenaBounds
 ) -> tuple[float, float, float]:
 	ux, uy, dist = _norm(px - fx, py - fy)
 	if dist >= 1e-3:
 		return ux, uy, dist
-	# Overlap: break out toward arena center so we do not freeze.
-	ux, uy, _ = _norm(width_mm * 0.5 - px, height_mm * 0.5 - py)
+	# Overlap: break out toward gantry center so we do not freeze.
+	ux, uy, _ = _norm(box.cx - px, box.cy - py)
 	return ux, uy, 0.0
 
 
@@ -147,15 +148,14 @@ def _center_slip(
 	uy: float,
 	px: float,
 	py: float,
-	width_mm: float,
-	height_mm: float,
+	box: ArenaBounds,
 	scene: TrackingFrame,
 	cfg: ChasePolicyConfig,
 ) -> tuple[float, float, float]:
 	# Lateral slip when pressed: avoid head-on stall, stay playful.
 	tx, ty = -uy, ux
-	# Bias slip toward center so we do not choose the wall side of a tangent.
-	cx, cy = width_mm * 0.5 - px, height_mm * 0.5 - py
+	# Bias slip toward gantry center so we do not choose the wall side of a tangent.
+	cx, cy = box.cx - px, box.cy - py
 	if tx * cx + ty * cy < 0:
 		tx, ty = -tx, -ty
 	return tx, ty, max(0.0, scene.closing_speed_mm_s) * cfg.lateral_gain
@@ -164,16 +164,15 @@ def _center_slip(
 def _wall_push(
 	x: float,
 	y: float,
-	width_mm: float,
-	height_mm: float,
+	box: ArenaBounds,
 	cfg: ChasePolicyConfig,
 ) -> tuple[float, float, float]:
-	"""Repel from edges/corners toward open space. Strength grows inside margin."""
-	m = cfg.wall_margin_mm
-	left = max(0.0, m - x) / m
-	right = max(0.0, m - (width_mm - x)) / m
-	top = max(0.0, m - y) / m
-	bottom = max(0.0, m - (height_mm - y)) / m
+	"""Repel from gantry edges toward open travel. Strength grows inside margin."""
+	m = max(cfg.wall_margin_mm, 1.0)
+	left = max(0.0, m - (x - box.x_min)) / m
+	right = max(0.0, m - (box.x_max - x)) / m
+	top = max(0.0, m - (y - box.y_min)) / m
+	bottom = max(0.0, m - (box.y_max - y)) / m
 	# Squared so corners (two walls) kick harder than a single edge.
 	# Near left → +x; near top → +y (origin is top-left in arena mm).
 	px = (left * left - right * right) * cfg.wall_gain
@@ -181,7 +180,7 @@ def _wall_push(
 	# Extra center pull when deep in a corner.
 	corner = max(left, right) * max(top, bottom)
 	if corner > 0:
-		cx, cy, _ = _norm(width_mm * 0.5 - x, height_mm * 0.5 - y)
+		cx, cy, _ = _norm(box.cx - x, box.cy - y)
 		px += cx * corner * cfg.corner_gain
 		py += cy * corner * cfg.corner_gain
 	strength = max(left, right, top, bottom)

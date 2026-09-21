@@ -65,6 +65,16 @@ def test_shared_chase_controller_and_fake_gantry() -> None:
 	g.close()
 
 
+def test_snapshot_reports_encoder_travel_in_arena_mm() -> None:
+	sim = HuntSim()
+	z = sim.snapshot()["zaber"]
+	assert z["x_min"] == 0.0
+	assert z["y_min"] == 0.0
+	assert z["x_max"] == sim.gantry.width_mm
+	assert z["y_max"] == sim.gantry.height_mm
+	assert abs(z["x_mm"] - sim.gantry.get_xy()[0]) < 0.05
+
+
 def test_huntsim_toy_backend_is_sim_by_default() -> None:
 	# Why: no X-MCC in CI; ferret stays on the delayed camera path either way.
 	sim = HuntSim()

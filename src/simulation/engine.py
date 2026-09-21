@@ -159,7 +159,7 @@ class HuntSim:
 			"decision": self._decision_dict(),
 			"scene": _scene_dict(frame, self.last_frame_index),
 			"control_hz": 1000.0 / self.cfg.control_period_ms,
-			"policy": asdict(self.cfg.chase),
+			"policy": asdict(self.controller._cfg or self.cfg.chase),
 		}
 
 	def _camera_dict(self, cam) -> dict:
@@ -226,7 +226,25 @@ class HuntSim:
 			"heading_deg": heading,
 			"max_speed_mm_s": self.cfg.zaber.max_speed_mm_s,
 			"max_accel_mm_s2": self.cfg.zaber.max_accel_mm_s2,
+			**self._travel_dict(),
 			"api_calls": _api_call_dicts(self.gantry),
+		}
+
+	def _travel_dict(self) -> dict:
+		# Why: HUD must show encoder mm vs Ace FOV so a short rail is obvious.
+		s = getattr(self.gantry, "settings", None)
+		if s is not None:
+			return {
+				"x_min": float(s.x_min),
+				"x_max": float(s.x_max),
+				"y_min": float(s.y_min),
+				"y_max": float(s.y_max),
+			}
+		return {
+			"x_min": 0.0,
+			"x_max": float(getattr(self.gantry, "width_mm", self.cfg.camera.width_mm)),
+			"y_min": 0.0,
+			"y_max": float(getattr(self.gantry, "height_mm", self.cfg.camera.height_mm)),
 		}
 
 	def _decision_dict(self) -> dict:

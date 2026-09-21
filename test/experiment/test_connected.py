@@ -41,6 +41,21 @@ def test_chase_feed_overwrites_prey_from_encoder() -> None:
 	assert scene.frame_index == 1
 
 
+def test_start_applies_gantry_travel_to_chase() -> None:
+	# Why: prey walls must be firmware rails, not the Ace FOV rectangle.
+	gantry = ZaberGantry()
+	gantry.settings.x_min = 0.0
+	gantry.settings.x_max = 320.0
+	gantry.settings.y_min = 0.0
+	gantry.settings.y_max = 210.0
+	exp = Experiment(gantry, AceCamera(), cfg=None)
+	exp.start()
+	b = exp.chase._bounds
+	exp.shutdown()
+	assert b.x_max == 320.0
+	assert b.y_max == 210.0
+
+
 def test_feed_ferret_mm_bypasses_camera() -> None:
 	# Why: pointer hybrid must not wait for SimulatedPylon grab_to_track.
 	gantry = ZaberGantry()

@@ -22,7 +22,7 @@
 	<main>
 		<section class="arena-wrap">
 			<canvas id="arena" width="960" height="600"></canvas>
-			<p class="hint">No Ace: pointer is the ferret (grey ghost = delayed Basler detection; hardware skips that delay). Live Ace: the mouse/ferret blob drives chase; pointer is ignored. The toy is the Zaber carriage — encoder pose, <code>move_velocity</code>.</p>
+			<p class="hint">Toy pose is gantry encoder mm on the Ace FOV (same origin). Teal box is firmware travel — the toy can only roam that rectangle. Keep-away walls follow the rails, not the camera edge.</p>
 		</section>
 		<aside id="hud"></aside>
 	</main>
