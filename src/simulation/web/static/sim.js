@@ -219,6 +219,7 @@ function hudCamera(s) {
 	return `
 		<h2>Basler / pylon</h2>
 		${row("ferret source", ferretSourceLabel(s), s.ferret_source === "ace" || (s.zaber && s.zaber.backend === "hardware") ? "ok" : "")}
+		${row("animal", (s.animal && s.animal.animal) ? `${s.animal.animal} (${s.animal.backend})` : "ferret", s.animal && s.animal.animal === "sphero" ? "ok" : "")}
 		${row("this window", "spectator — chase is not on this socket", "ok")}
 		${row("model", c.model)}
 		${row("backend", c.backend || "sim", c.backend === "pylon" ? "ok" : "")}

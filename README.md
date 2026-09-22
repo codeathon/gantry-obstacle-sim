@@ -4,7 +4,7 @@ Timed hunt simulation of the [pylon-track](https://github.com/codeathon/pylon-tr
 
 Simulation code lives in `src/simulation/` so this repo can also hold the real gantry stack later. Imported from [prairie-live#13](https://github.com/codeathon/prairie-live/pull/13).
 
-The ferret is the **live Ace blob** when `PREY_ACE=1` finds a camera, otherwise **your mouse pointer** (delayed grab model). The prey toy is the gantry, commanded through the same `move_absolute` / `move_velocity` / `stop` shapes as [Zaber Motion Library](https://software.zaber.com/motion-library/api/py). The camera path uses pylon-track’s Basler ace 2 numbers (not the ferret_behavior 7-cam mocap stack).
+The **animal** in the Ace FOV is a real ferret (`PREY_ANIMAL=ferret`, default) or a **Sphero Mini** (`PREY_ANIMAL=sphero`). Ace maps that blob to arena mm; the prey toy stays on the Zaber encoder. The Mini driver lives in `src/sphero/` and stays in the tree — sphero mode only starts the BLE seek thread. Without a camera the animal is **your mouse pointer** (delayed grab model). The camera path uses pylon-track’s Basler ace 2 numbers (not the ferret_behavior 7-cam mocap stack).
 
 ## What is timed
 
@@ -70,3 +70,29 @@ PREY_ACE=1 PREY_ZABER=1 PYTHONPATH=src python -m simulation.web
 Same stack without the HUD: `python -m experiment.run --live`.
 
 Missing Ace/X-MCC falls back to the pointer delay model and `SimulatedGantry` so the loop still runs. `PREY_ACE_REQUIRE=1` / `PREY_ZABER_REQUIRE=1` fail instead. Optional `PYLON_SERIAL` selects the camera.
+
+The HUD at http://127.0.0.1:8765 is a spectator: Ace grab and Zaber `move_velocity` run on their own thread.
+
+## Animal (`PREY_ANIMAL`)
+
+Ace is the animal pose. The encoder is the prey pose. The Mini IMU is not used for XY.
+
+| `PREY_ANIMAL` | What happens |
+|---|---|
+| `ferret` (default) | Ace blob + keep-away. `src/sphero/` is idle (no BLE). |
+| `sphero` | Same Ace + keep-away, plus a `sphero-seek` thread that `roll`s toward the prey. |
+
+```bash
+pip install -e ".[pylon,zaber,sphero]"
+PREY_ANIMAL=sphero PREY_ACE=1 PREY_ZABER=1 PREY_ZABER_REQUIRE=1 \
+  ZABER_PORT=/dev/ttyUSB0 PYTHONPATH=src python -m simulation.web
+```
+
+Real ferret (Sphero code stays, runner does not connect):
+
+```bash
+PREY_ANIMAL=ferret PREY_ACE=1 PREY_ZABER=1 PREY_ZABER_REQUIRE=1 \
+  ZABER_PORT=/dev/ttyUSB0 PYTHONPATH=src python -m simulation.web
+```
+
+Aim the Mini tail LED along arena +X once so heading 0 matches Ace +X. `PREY_SPHERO_REQUIRE=1` fails if BLE is missing in sphero mode. Optional `SPHERO_NAME` selects the toy. `SPHERO_STUB=1` keeps the in-memory Mini (tests / no radio).
