@@ -24,7 +24,7 @@ function syncHint(s) {
 	const el = document.querySelector(".hint");
 	if (!el) return;
 	if (s.ferret_source === "ace") {
-		el.textContent = "Live Ace ferret (auto-started). Pointer is ignored. Grey ghost is the chase pose. Toy is the Zaber encoder.";
+		el.textContent = "Spectator HUD. Live Ace ferret + Zaber toy run on the ace-zaber thread; this window cannot add grab or serial lag.";
 	} else if (s.zaber && s.zaber.backend === "hardware") {
 		el.textContent = "Pointer is the ferret (no Ace delay). Toy is the X-MCC encoder. Start trial (S) to chase.";
 	}
@@ -219,6 +219,7 @@ function hudCamera(s) {
 	return `
 		<h2>Basler / pylon</h2>
 		${row("ferret source", ferretSourceLabel(s), s.ferret_source === "ace" || (s.zaber && s.zaber.backend === "hardware") ? "ok" : "")}
+		${row("this window", "spectator — chase is not on this socket", "ok")}
 		${row("model", c.model)}
 		${row("backend", c.backend || "sim", c.backend === "pylon" ? "ok" : "")}
 		${row("format", `${c.pixel_format} ${s.arena.width_px}×${s.arena.height_px}`)}

@@ -96,6 +96,13 @@ class ZaberGantry:
 		self._refresh()
 		return self._vx, self._vy
 
+	def peek_xy(self) -> tuple[float, float]:
+		# Why: HUD must not trigger another X-MCC poll after chase_feed.
+		return self._x, self._y
+
+	def peek_velocity(self) -> tuple[float, float]:
+		return self._vx, self._vy
+
 	def is_busy(self) -> bool:
 		# Why: HUD/chase must not add two is_busy serial RTTs on every snapshot.
 		return (self._vx * self._vx + self._vy * self._vy) ** 0.5 > 1.0

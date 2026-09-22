@@ -112,6 +112,13 @@ class SimulatedGantry:
 	def get_velocity(self) -> tuple[float, float]:
 		return self.vx_mm_s, self.vy_mm_s
 
+	def peek_xy(self) -> tuple[float, float]:
+		# Why: same HUD contract as ZaberGantry — no extra encoder poll.
+		return self.x_mm, self.y_mm
+
+	def peek_velocity(self) -> tuple[float, float]:
+		return self.vx_mm_s, self.vy_mm_s
+
 	def connect(self) -> None:
 		# Why: same call site as ZaberGantry; sim has no USB CDC.
 		self._log("connect", "sim")

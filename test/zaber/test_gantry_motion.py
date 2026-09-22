@@ -274,6 +274,16 @@ def test_home_keeps_spawn_when_inside_travel() -> None:
 	assert g.get_xy() == (40.0, 50.0)
 
 
+def test_peek_xy_skips_serial_refresh() -> None:
+	# Why: HUD snapshot must read the last chase_feed poll, not a new RTT.
+	g = ZaberGantry()
+	g.connect()
+	g._x, g._y = 11.0, 22.0
+	g._vx, g._vy = 3.0, 4.0
+	assert g.peek_xy() == (11.0, 22.0)
+	assert g.peek_velocity() == (3.0, 4.0)
+
+
 def test_is_busy_uses_encoder_speed() -> None:
 	# Why: axis is_busy is a serial RTT; HUD uses cached encoder delta instead.
 	x, y = FakeAxis(50.0), FakeAxis(50.0)
