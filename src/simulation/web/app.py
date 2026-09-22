@@ -1,9 +1,9 @@
-"""FastAPI web sim: Ace ferret when present, else pointer; prey is Zaber."""
+"""FastAPI spectator HUD. Why: Ace+Zaber run on PipelineRunner, not this loop."""
 
 from __future__ import annotations
 
 import asyncio
-import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -11,17 +11,28 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from simulation.engine import HuntSim, loop_timing
+from simulation.pipeline_runner import PipelineRunner
 
 STATIC = Path(__file__).resolve().parent / "static"
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+	try:
+		yield
+	finally:
+		shutdown_app(app)
+
+
 def create_app() -> FastAPI:
-	app = FastAPI(title="Prey gantry hunt sim")
+	app = FastAPI(title="Prey gantry hunt sim", lifespan=_lifespan)
 	sim = HuntSim()
-	# Why: warmup idles chase; pointer+X-MCC must hunt without an extra Start click.
-	if not sim._live_ace:
-		sim.set_trial("start")
+	# Why: warmup idles chase; Ace blob and pointer hunts must start without S.
+	sim.set_trial("start")
+	runner = PipelineRunner(sim)
+	runner.start()
 	app.state.sim = sim
+	app.state.runner = runner
 	app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 	@app.get("/")
@@ -31,53 +42,44 @@ def create_app() -> FastAPI:
 	@app.websocket("/ws")
 	async def ws_endpoint(ws: WebSocket) -> None:
 		await ws.accept()
-		task = asyncio.create_task(_sim_loop(ws, sim))
-		try:
-			while True:
-				msg = await ws.receive_json()
-				_handle_client(sim, msg)
-		except WebSocketDisconnect:
-			pass
-		finally:
-			task.cancel()
+		await _hud_session(ws, runner)
 
 	return app
 
 
-def _handle_client(sim: HuntSim, msg: dict) -> None:
-	kind = msg.get("type")
-	if kind == "pointer":
-		sim.set_pointer(float(msg["x_mm"]), float(msg["y_mm"]))
-	elif kind == "trial":
-		sim.set_trial(str(msg.get("cmd", "")))
+def shutdown_app(app: FastAPI) -> None:
+	# Why: stop ace-zaber before closing the serial port / pylon grabber.
+	runner = getattr(app.state, "runner", None)
+	if runner is not None:
+		runner.stop()
+		app.state.runner = None
+	sim = getattr(app.state, "sim", None)
+	if sim is not None:
+		sim.exp.shutdown()
 
 
-async def _sim_loop(ws: WebSocket, sim: HuntSim) -> None:
-	# Why: 1 ms physics keeps 200 fps grabs and 4 ms Zaber RTT honest vs wall clock.
-	step_s, send_every, idle_s = loop_timing(sim.gantry)
-	acc = 0.0
-	last = time.perf_counter()
-	last_send = last
+async def _hud_session(ws: WebSocket, runner: PipelineRunner) -> None:
+	# Why: subscribe only copies last chase state; disconnect must not stop hunt.
+	runner.watch(1)
+	task = asyncio.create_task(_hud_loop(ws, runner))
+	try:
+		while True:
+			msg = await ws.receive_json()
+			runner.post(msg)
+	except WebSocketDisconnect:
+		pass
+	finally:
+		task.cancel()
+		runner.watch(-1)
+
+
+async def _hud_loop(ws: WebSocket, runner: PipelineRunner) -> None:
+	_, send_every, _ = loop_timing(runner._sim.gantry)
 	while True:
-		await asyncio.sleep(idle_s)
-		now = time.perf_counter()
-		acc += min(now - last, 0.05)
-		last = now
-		while acc >= step_s:
-			try:
-				sim.step(step_s)
-			except Exception as exc:
-				# Why: one BADDATA used to cancel the hunt loop with no traceback.
-				sim._loop_error = str(exc)
-			acc -= step_s
-			if idle_s > 0:
-				# Why: one hardware step per turn so pointer WS is not starved.
-				acc = 0.0
-				break
-		if now - last_send >= send_every or sim._hud_dirty:
-			sim._hud_dirty = False
-			last_send = now
-			await ws.send_json(sim.snapshot())
+		await asyncio.sleep(send_every)
+		snap = runner.hud()
+		if snap:
+			await ws.send_json(snap)
 
 
 def main() -> None:

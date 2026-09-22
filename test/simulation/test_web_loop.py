@@ -1,4 +1,4 @@
-"""Web loop must yield for pointer WS instead of 1 ms serial catch-up."""
+"""Web loop is a spectator; chase rate stays on the ace-zaber thread."""
 
 from simulation.engine import HuntSim, loop_timing
 
@@ -12,13 +12,16 @@ def test_loop_timing_hardware_is_chase_rate() -> None:
 	assert loop_timing(_Hw()) == (0.020, 0.016, 0.005)
 
 
-def test_web_app_autostarts_pointer_trial() -> None:
-	# Why: warmup left the X-MCC idle until someone pressed S.
-	from simulation.web.app import create_app
+def test_web_app_autostarts_trial() -> None:
+	# Why: warmup left the X-MCC idle; Ace and pointer hunts both auto-start.
+	from simulation.web.app import create_app, shutdown_app
 
 	app = create_app()
-	assert app.state.sim.trial.value == "running"
-	app.state.sim.exp.shutdown()
+	try:
+		assert app.state.sim.trial.value == "running"
+		assert app.state.runner._thread is not None
+	finally:
+		shutdown_app(app)
 
 
 def test_loop_timing_sim_keeps_1ms_physics() -> None:

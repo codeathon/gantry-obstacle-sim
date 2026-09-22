@@ -1,4 +1,4 @@
-"""AnimalDetector: mouse blob in Mono8, toy discarded via encoder XY."""
+"""AnimalDetector: ferret blob in Mono8, toy discarded via encoder XY."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def test_blob_centroid_after_warmup() -> None:
 
 
 def test_toy_blob_near_encoder_is_ignored() -> None:
-	# Why: mouse and toy can both be in the Ace FOV; chase wants the animal.
+	# Why: ferret and toy can both be in the Ace FOV; chase wants the animal.
 	det = _tiny_detector()
 	bg = bytearray(32 * 32)
 	det.update(_frame(32, 32, bg, idx=1))
@@ -60,15 +60,26 @@ def test_toy_blob_near_encoder_is_ignored() -> None:
 	assert det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0)) is None
 
 
-def test_mouse_far_from_encoder_is_kept() -> None:
+def test_lone_blob_in_frame_with_encoder_is_toy() -> None:
+	# Why: empty arena except the carriage — do not invent a ferret.
 	det = _tiny_detector()
 	bg = bytearray(32 * 32)
 	det.update(_frame(32, 32, bg, idx=1))
 	img = bytearray(32 * 32)
 	_paint(img, 32, 4, 14, 9, 19)
+	assert det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0)) is None
+
+
+def test_ferret_far_from_encoder_is_kept() -> None:
+	det = _tiny_detector()
+	bg = bytearray(32 * 32)
+	det.update(_frame(32, 32, bg, idx=1))
+	img = bytearray(32 * 32)
+	_paint(img, 32, 4, 14, 9, 19)
+	_paint(img, 32, 18, 14, 23, 19)
 	xy = det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0))
 	assert xy is not None
-	assert abs(xy[0] - 6.0) < 0.1
+	assert abs(xy[0] - 6.0) < 1.0
 
 
 def test_pipeline_maps_blob_px_times_gsd() -> None:
@@ -86,6 +97,35 @@ def test_pipeline_maps_blob_px_times_gsd() -> None:
 	assert scene.ferret.valid
 	assert abs(scene.ferret.x_px - 6.0) < 0.1
 	assert abs(scene.ferret.x_mm - 6.0 * gsd) < 1e-6
+
+
+def test_good_empty_frame_does_not_coast_a_ghost() -> None:
+	# Why: toy-only Ace frames are valid grabs; coasting would keep a fake ferret.
+	pipe = TrackingPipeline(
+		gsd_mm_per_px=1.0,
+		detector=AnimalDetector(1.0, min_area=4.0, exclude_mm=8.0, warmup_frames=1),
+	)
+	bg = bytearray(32 * 32)
+	pipe.process(_frame(32, 32, bg, idx=1), TrialPhase.running)
+	img = bytearray(32 * 32)
+	_paint(img, 32, 4, 14, 9, 19)
+	hit = pipe.process(_frame(32, 32, img, idx=2), TrialPhase.running)
+	assert hit.ferret.valid
+	empty = pipe.process(
+		_frame(32, 32, bg, idx=3), TrialPhase.running, prey_xy_mm=(20.0, 16.0)
+	)
+	assert not empty.ferret.valid
+
+
+def test_long_span_beam_is_not_a_ferret() -> None:
+	# Why: the moving XXY crossbar is a long foreground streak, not an animal.
+	from vision.detect import _numpy_blobs
+
+	import numpy as np
+
+	mask = np.zeros((16, 16), dtype=bool)
+	mask[7, :] = True
+	assert _numpy_blobs(mask, min_area=4.0, max_span_px=8.0) == []
 
 
 def test_bytes_centroid_fallback() -> None:

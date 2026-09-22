@@ -28,6 +28,21 @@ def test_ferret_from_camera_pixels_times_gsd() -> None:
 	assert scene.ferret.speed_mm_s == 0.0
 
 
+def test_coast_holds_last_ace_px() -> None:
+	# Why: pylon-track coasts ~30 frames so a missed blob does not drop chase.
+	pipe = TrackingPipeline(gsd_mm_per_px=1.0, fps=200.0)
+	pipe.process(
+		CameraFrame(host_time_ns=1_000_000_000, ferret_x_px=40.0, ferret_y_px=20.0),
+		TrialPhase.running,
+	)
+	blank = CameraFrame(host_time_ns=1_005_000_000, width_px=8, height_px=8)
+	scene = pipe.process(blank, TrialPhase.running)
+	assert scene.ferret.valid
+	assert abs(scene.ferret.x_px - 40.0) < 1e-9
+	assert abs(scene.ferret.x_mm - 40.0) < 1e-9
+	assert abs(scene.quality.ferret_confidence - 0.5) < 1e-9
+
+
 def test_ferret_speed_from_successive_detections() -> None:
 	gsd = 1.0
 	pipe = TrackingPipeline(gsd_mm_per_px=gsd, fps=200.0)

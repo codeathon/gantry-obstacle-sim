@@ -24,7 +24,7 @@ function syncHint(s) {
 	const el = document.querySelector(".hint");
 	if (!el) return;
 	if (s.ferret_source === "ace") {
-		el.textContent = "Live Ace blob is the ferret. Pointer is ignored. Grey ghost is the chase pose. Toy is the Zaber encoder.";
+		el.textContent = "Spectator HUD. Live Ace ferret + Zaber toy run on the ace-zaber thread; this window cannot add grab or serial lag.";
 	} else if (s.zaber && s.zaber.backend === "hardware") {
 		el.textContent = "Pointer is the ferret (no Ace delay). Toy is the X-MCC encoder. Start trial (S) to chase.";
 	}
@@ -219,6 +219,7 @@ function hudCamera(s) {
 	return `
 		<h2>Basler / pylon</h2>
 		${row("ferret source", ferretSourceLabel(s), s.ferret_source === "ace" || (s.zaber && s.zaber.backend === "hardware") ? "ok" : "")}
+		${row("this window", "spectator — chase is not on this socket", "ok")}
 		${row("model", c.model)}
 		${row("backend", c.backend || "sim", c.backend === "pylon" ? "ok" : "")}
 		${row("format", `${c.pixel_format} ${s.arena.width_px}×${s.arena.height_px}`)}
@@ -258,6 +259,7 @@ function hudAnimals(s) {
 	return `
 		<h2>Ferret (camera detection)</h2>
 		${row(s.ferret_source === "ace" ? "Ace track" : "world pointer", s.ferret_true.valid ? fmtTrack(s.ferret_true) : "not seen")}
+		${row("Ace confidence", (sc.ferret_confidence || 0).toFixed(2), sc.ferret_confidence >= 0.5 ? "ok" : "")}
 		${row("camera px→mm", fmtTrack(s.ferret_camera))}
 		${row("camera px", s.ferret_camera.valid ? `${s.ferret_camera.x_px.toFixed(0)}, ${s.ferret_camera.y_px.toFixed(0)} px` : "not seen")}
 		<h2>Toy (Zaber encoder)</h2>

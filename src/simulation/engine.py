@@ -10,6 +10,7 @@ from basler.pylon import want_ace
 from experiment.orchestrator import Experiment
 from simulation.config import SimConfig, load_sim_config
 from simulation.pylon_sim import SimulatedPylonCamera
+from vision.ground_calib import GroundCam, ground_cam_for_serial
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackState, TrialPhase
 from zaber.arena_map import gantry_to_arena, scale_vel, travel_box
@@ -72,15 +73,21 @@ class HuntSim:
 
 	def _bind_experiment(self, cam) -> Experiment:
 		# Why: same Experiment chase_feed as hardware; sim only supplies fakes.
+		# Cache Charuco — snapshot used to re-read camera_calibration.toml.
+		ground = _ground_for_camera(self.camera)
+		self._ground = ground
+		gsd = ground.gsd_mm_per_px if ground else cam.gsd_mm_per_px
+		width_mm = ground.width_mm if ground else cam.width_mm
+		height_mm = ground.height_mm if ground else cam.height_mm
 		exp = Experiment(
 			self.gantry,
 			self.camera,
 			cfg=self.cfg.chase,
-			width_mm=cam.width_mm,
-			height_mm=cam.height_mm,
+			width_mm=width_mm,
+			height_mm=height_mm,
 			period_ms=self.cfg.control_period_ms,
 			stale_ms=self.cfg.stale_frame_ms,
-			pipeline=TrackingPipeline(cam.gsd_mm_per_px, cam.frame_rate_fps),
+			pipeline=TrackingPipeline(gsd, cam.frame_rate_fps, ground=ground),
 		)
 		exp.start()
 		return exp
@@ -183,6 +190,15 @@ class HuntSim:
 		}
 
 	def _arena_snapshot(self, cam) -> dict:
+		ground = self._ground
+		if ground is not None:
+			return {
+				"width_mm": ground.width_mm,
+				"height_mm": ground.height_mm,
+				"width_px": ground.width_px,
+				"height_px": ground.height_px,
+				"gsd_mm_per_px": ground.gsd_mm_per_px,
+			}
 		fov_fn = getattr(self.camera, "fov", None)
 		if callable(fov_fn):
 			fov = fov_fn()
@@ -199,6 +215,8 @@ class HuntSim:
 		# Why: HUD gold ferret is the Ace blob, not a leftover pointer spawn.
 		seen = scene.ferret
 		if not seen.valid:
+			# Why: toy-only frames must clear a previous ghost ferret on the HUD.
+			self.true_ferret = TrackState()
 			return
 		self.true_ferret = TrackState(
 			seen.x_mm,
@@ -211,8 +229,7 @@ class HuntSim:
 		)
 
 	def _zaber_dict(self) -> dict:
-		ex, ey = self.gantry.get_xy()
-		evx, evy = self.gantry.get_velocity()
+		ex, ey, evx, evy = self._cached_encoder()
 		px, py, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
@@ -269,9 +286,20 @@ class HuntSim:
 			"stale_stops": self.controller.stale_stops,
 		}
 
-	def _prey_track(self) -> TrackState:
+	def _cached_encoder(self) -> tuple[float, float, float, float]:
+		# Why: chase_feed already polled; HUD must not add another serial RTT.
+		peek_xy = getattr(self.gantry, "peek_xy", None)
+		peek_v = getattr(self.gantry, "peek_velocity", None)
+		if callable(peek_xy) and callable(peek_v):
+			ex, ey = peek_xy()
+			evx, evy = peek_v()
+			return ex, ey, evx, evy
 		ex, ey = self.gantry.get_xy()
 		evx, evy = self.gantry.get_velocity()
+		return ex, ey, evx, evy
+
+	def _prey_track(self) -> TrackState:
+		ex, ey, evx, evy = self._cached_encoder()
 		x, y, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
@@ -340,6 +368,7 @@ def _scene_dict(frame, frame_index: int) -> dict:
 		"bearing_deg": frame.bearing_deg if frame else 0,
 		"closing_speed_mm_s": frame.closing_speed_mm_s if frame else 0,
 		"frame_index": frame_index,
+		"ferret_confidence": frame.quality.ferret_confidence if frame else 0.0,
 	}
 
 
@@ -353,6 +382,16 @@ def _track_dict(t: TrackState) -> dict:
 		"direction_deg": t.direction_deg,
 		"valid": t.valid,
 	}
+
+
+def _ground_for_camera(camera) -> GroundCam | None:
+	# Why: only the live Ace serial (or PYLON_SERIAL on a pylon grabber).
+	serial = str(getattr(camera, "serial", "") or "")
+	if not serial and getattr(camera, "backend", "") == "pylon":
+		import os
+
+		serial = os.environ.get("PYLON_SERIAL") or os.environ.get("PYLON_CAMERA") or ""
+	return ground_cam_for_serial(serial)
 
 
 def _api_call_dicts(gantry) -> list[dict]:

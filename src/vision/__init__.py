@@ -1,5 +1,7 @@
 """Vision types. Why: TrackingFrame is the only payload chase may consume."""
 
+from vision.associator import ObjectAssociator
+from vision.ground_calib import GroundCam
 from vision.pipeline import TrackingPipeline
 from vision.tracking_frame import TrackingFrame, TrackState, TrackingQuality, TrialPhase
 
@@ -9,4 +11,6 @@ __all__ = [
 	"TrackingQuality",
 	"TrialPhase",
 	"TrackingPipeline",
+	"ObjectAssociator",
+	"GroundCam",
 ]
