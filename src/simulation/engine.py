@@ -73,7 +73,9 @@ class HuntSim:
 
 	def _bind_experiment(self, cam) -> Experiment:
 		# Why: same Experiment chase_feed as hardware; sim only supplies fakes.
+		# Cache Charuco — snapshot used to re-read camera_calibration.toml.
 		ground = _ground_for_camera(self.camera)
+		self._ground = ground
 		gsd = ground.gsd_mm_per_px if ground else cam.gsd_mm_per_px
 		width_mm = ground.width_mm if ground else cam.width_mm
 		height_mm = ground.height_mm if ground else cam.height_mm
@@ -188,7 +190,7 @@ class HuntSim:
 		}
 
 	def _arena_snapshot(self, cam) -> dict:
-		ground = _ground_for_camera(self.camera)
+		ground = self._ground
 		if ground is not None:
 			return {
 				"width_mm": ground.width_mm,
@@ -227,8 +229,7 @@ class HuntSim:
 		)
 
 	def _zaber_dict(self) -> dict:
-		ex, ey = self.gantry.get_xy()
-		evx, evy = self.gantry.get_velocity()
+		ex, ey, evx, evy = self._cached_encoder()
 		px, py, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
@@ -285,9 +286,20 @@ class HuntSim:
 			"stale_stops": self.controller.stale_stops,
 		}
 
-	def _prey_track(self) -> TrackState:
+	def _cached_encoder(self) -> tuple[float, float, float, float]:
+		# Why: chase_feed already polled; HUD must not add another serial RTT.
+		peek_xy = getattr(self.gantry, "peek_xy", None)
+		peek_v = getattr(self.gantry, "peek_velocity", None)
+		if callable(peek_xy) and callable(peek_v):
+			ex, ey = peek_xy()
+			evx, evy = peek_v()
+			return ex, ey, evx, evy
 		ex, ey = self.gantry.get_xy()
 		evx, evy = self.gantry.get_velocity()
+		return ex, ey, evx, evy
+
+	def _prey_track(self) -> TrackState:
+		ex, ey, evx, evy = self._cached_encoder()
 		x, y, vx, vy = self._encoder_to_arena(ex, ey, evx, evy)
 		spd = math.hypot(vx, vy)
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
