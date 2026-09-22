@@ -160,6 +160,7 @@ class HuntSim:
 			"trial": self.trial.value,
 			"arena": self._arena_snapshot(cam),
 			"ferret_source": "ace" if self._live_ace else "pointer",
+			"animal": self.exp.sphero_status(),
 			"ferret_true": _track_dict(self.true_ferret),
 			"ferret_camera": _track_dict(self._to_arena_track(seen)),
 			"prey": _track_dict(self._prey_track()),

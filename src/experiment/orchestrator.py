@@ -29,6 +29,7 @@ class Experiment:
 		period_ms: int = 20,
 		stale_ms: float = 80.0,
 		pipeline: TrackingPipeline | None = None,
+		sphero: object | None = None,
 	) -> None:
 		self._gantry = gantry
 		self._grabber = grabber
@@ -41,6 +42,9 @@ class Experiment:
 		self._fov_w = width_mm
 		self._fov_h = height_mm
 		self.last_scene: TrackingFrame | None = None
+		# Why: injected stub in tests; factory runs only when PREY_ANIMAL=sphero.
+		self._sphero = sphero
+		self._sphero_runner = None
 
 	def start(self) -> None:
 		# Why: open serial + Ace, then LatestImageOnly, matching phase_configuring.
@@ -52,6 +56,7 @@ class Experiment:
 		# Why: FOV is ferret space; prey keep-away must use X-MCC travel.
 		self._apply_gantry_travel()
 		self._grabber.start_grabbing()
+		self._start_animal()
 		self._running = True
 
 	def run(self, cycles: int = 1) -> None:
@@ -72,6 +77,7 @@ class Experiment:
 		if self.last_scene is not None:
 			self._stamp_encoder_prey(self.last_scene, arena=True)
 			self._submit_chase(self.last_scene)
+			self._offer_animal(self.last_scene)
 		self.chase.poll(self._poll_time(t_s, cam_frame))
 		return delivered
 
@@ -100,6 +106,7 @@ class Experiment:
 		scene.quality.ferret_confidence = 1.0
 		self._stamp_encoder_prey(scene, arena=True)
 		self._submit_chase(scene)
+		self._offer_animal(scene)
 		self.last_scene = scene
 		self.chase.poll(now_s)
 		return scene
@@ -110,9 +117,41 @@ class Experiment:
 	def shutdown(self) -> None:
 		# Why: stop chase, gantry.stop(), stop grabbing, then join threads.
 		self._running = False
+		self._stop_animal()
 		self._gantry.stop()
 		self._grabber.close()
 		self._gantry.close()
+
+	def _start_animal(self) -> None:
+		from sphero.animal import want_sphero
+		from sphero.factory import open_sphero
+		from sphero.runner import SpheroRunner
+
+		if not want_sphero():
+			return
+		if self._sphero is None:
+			self._sphero = open_sphero()
+		self._sphero_runner = SpheroRunner(self._sphero)
+		self._sphero_runner.start()
+
+	def _stop_animal(self) -> None:
+		if self._sphero_runner is not None:
+			self._sphero_runner.stop()
+			self._sphero_runner = None
+
+	def _offer_animal(self, scene: TrackingFrame) -> None:
+		# Why: non-blocking pointer swap; BLE roll is on sphero-seek.
+		if self._sphero_runner is None:
+			return
+		self._sphero_runner.offer(scene)
+
+	def sphero_status(self) -> dict:
+		from sphero.animal import animal_name
+
+		backend = "off"
+		if self._sphero is not None:
+			backend = str(getattr(self._sphero, "backend", "stub"))
+		return {"animal": animal_name(), "backend": backend}
 
 	def _ingest_camera(self, cam_frame) -> TrackingFrame | None:
 		if cam_frame is None:
