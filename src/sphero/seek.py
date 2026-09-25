@@ -49,6 +49,8 @@ def _keep_in(
 	rad = math.radians(heading)
 	vx = speed * math.cos(rad)
 	vy = -speed * math.sin(rad)
+	# Why: kill wall-leaving seek first so inward push is not cancelled to 0.
+	vx, vy = _clip_outward(x, y, vx, vy, box)
 	wx, wy = _wall_vel(x, y, box, margin, max_speed)
 	vx, vy = _clip_outward(x, y, vx + wx, vy + wy, box)
 	spd = math.hypot(vx, vy)
