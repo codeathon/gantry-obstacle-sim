@@ -22,6 +22,14 @@ class SpheroRunner:
 		self._scene: TrackingFrame | None = None
 		self._stop = threading.Event()
 		self._thread: threading.Thread | None = None
+		# Why: same mapped gantry window; Mini pose is arena mm.
+		self._bounds = None
+		self._wall_margin_mm = 0.0
+
+	def set_travel(self, bounds, wall_margin_mm: float) -> None:
+		# Why: apply FOV/rail box before the first roll so it cannot leave.
+		self._bounds = bounds
+		self._wall_margin_mm = float(wall_margin_mm)
 
 	def start(self) -> None:
 		if self._thread is not None:
@@ -67,7 +75,13 @@ class SpheroRunner:
 			scene = self._scene
 		if scene is None or self._toy is None:
 			return
-		cmd = seek_command(scene.ferret, scene.prey, scene.trial_phase)
+		cmd = seek_command(
+			scene.ferret,
+			scene.prey,
+			scene.trial_phase,
+			bounds=self._bounds,
+			wall_margin_mm=self._wall_margin_mm,
+		)
 		if cmd is None:
 			self._toy.stop()
 			return

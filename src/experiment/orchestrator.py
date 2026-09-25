@@ -139,7 +139,24 @@ class Experiment:
 			self._sphero_runner = SpheroRunner(self._sphero)
 		else:
 			self._sphero_runner = SpheroRunner(factory=open_sphero)
+		# Why: Mini rolls free; pin it to the same mapped travel the gantry uses.
+		self._apply_mini_travel()
 		self._sphero_runner.start()
+
+	def _apply_mini_travel(self) -> None:
+		if self._sphero_runner is None:
+			return
+		from chase.bounds import ArenaBounds, fit_chase_policy
+		from chase.config import ChasePolicyConfig
+
+		# Mapped gantry travel is the FOV rectangle Mini already lives in.
+		box = ArenaBounds(0.0, self._fov_w, 0.0, self._fov_h)
+		src = self.chase._cfg_src
+		if isinstance(src, ChasePolicyConfig):
+			margin = fit_chase_policy(src, box).wall_margin_mm
+		else:
+			margin = min(280.0, min(box.width_mm, box.height_mm) * 0.18)
+		self._sphero_runner.set_travel(box, margin)
 
 	def _enable_mini_lure(self) -> None:
 		# Why: Mini GATT cannot follow a 480 mm/s keep-away; wait in the ring.

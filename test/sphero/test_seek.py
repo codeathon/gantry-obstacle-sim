@@ -48,3 +48,53 @@ def test_zero_speed_when_arrived() -> None:
 	)
 	assert cmd is not None
 	assert cmd[0] == 0.0
+
+
+def _vx(cmd: tuple[float, float]) -> float:
+	import math
+
+	return cmd[0] * math.cos(math.radians(cmd[1]))
+
+
+def test_wall_blocks_roll_out_of_gantry_box() -> None:
+	# Why: Mini was rolling into the enclosure; gantry already clips this axis.
+	from chase.bounds import ArenaBounds
+
+	box = ArenaBounds(0.0, 200.0, 0.0, 200.0)
+	cmd = seek_command(
+		TrackState(200.0, 100.0, valid=True),
+		TrackState(400.0, 100.0, valid=True),
+		bounds=box,
+		wall_margin_mm=40.0,
+	)
+	assert cmd is not None
+	assert _vx(cmd) <= 1e-6
+
+
+def test_outside_wall_rolls_back_in() -> None:
+	from chase.bounds import ArenaBounds
+
+	box = ArenaBounds(0.0, 200.0, 0.0, 200.0)
+	cmd = seek_command(
+		TrackState(250.0, 100.0, valid=True),
+		TrackState(400.0, 100.0, valid=True),
+		bounds=box,
+		wall_margin_mm=40.0,
+	)
+	assert cmd is not None
+	assert _vx(cmd) < 0.0
+
+
+def test_open_field_seek_unchanged() -> None:
+	from chase.bounds import ArenaBounds
+
+	box = ArenaBounds(0.0, 1000.0, 0.0, 1000.0)
+	cmd = seek_command(
+		TrackState(500.0, 500.0, valid=True),
+		TrackState(700.0, 500.0, valid=True),
+		bounds=box,
+		wall_margin_mm=40.0,
+	)
+	assert cmd is not None
+	assert cmd[0] == 180.0
+	assert abs(cmd[1] - 0.0) < 1.0

@@ -45,6 +45,27 @@ def test_sphero_factory_opens_off_start_thread(monkeypatch) -> None:
 	assert seen == ["sphero-seek"]
 
 
+def test_sphero_uses_gantry_travel_box(monkeypatch) -> None:
+	# Why: Mini must share the mapped rail window or it pins on the enclosure.
+	from simulation.config import load_sim_config
+
+	monkeypatch.setenv("PREY_ANIMAL", "sphero")
+	exp = Experiment(
+		ZaberGantry(), AceCamera(), cfg=load_sim_config().chase, sphero=SpheroStub()
+	)
+	exp.start()
+	box = exp._sphero_runner._bounds
+	margin = exp._sphero_runner._wall_margin_mm
+	fov_w, fov_h = exp._fov_w, exp._fov_h
+	exp.shutdown()
+	assert box is not None
+	assert box.x_min == 0.0
+	assert box.y_min == 0.0
+	assert box.x_max == fov_w
+	assert box.y_max == fov_h
+	assert margin > 0.0
+
+
 def test_sphero_mode_enables_mini_lure(monkeypatch) -> None:
 	from simulation.config import load_sim_config
 
