@@ -75,8 +75,12 @@ def test_sphero_mode_enables_mini_lure(monkeypatch) -> None:
 	)
 	exp.start()
 	lure = exp.chase._cfg.lure_speed_mm_s
+	min_gap = exp.chase._cfg.min_gap_mm
+	arrive = exp._sphero_runner._arrive_mm
 	exp.shutdown()
 	assert lure == 80.0
+	assert min_gap >= 250.0
+	assert arrive >= 250.0
 
 
 def test_sphero_mode_offers_scene(monkeypatch) -> None:

@@ -153,21 +153,31 @@ class Experiment:
 		box = ArenaBounds(0.0, self._fov_w, 0.0, self._fov_h)
 		src = self.chase._cfg_src
 		if isinstance(src, ChasePolicyConfig):
-			margin = fit_chase_policy(src, box).wall_margin_mm
+			fitted = fit_chase_policy(src, box)
+			margin = fitted.wall_margin_mm
+			arrive = fitted.min_gap_mm if fitted.ace_sep_mm > 0.0 else 40.0
 		else:
 			margin = min(280.0, min(box.width_mm, box.height_mm) * 0.18)
-		self._sphero_runner.set_travel(box, margin)
+			arrive = 40.0
+		self._sphero_runner.set_travel(box, margin, arrive_mm=arrive)
 
 	def _enable_mini_lure(self) -> None:
 		# Why: Mini GATT cannot follow a 480 mm/s keep-away; wait in the ring.
 		from dataclasses import replace
 
-		from chase.config import ChasePolicyConfig
+		from chase.config import ACE_SEP_MM, ChasePolicyConfig
 
 		cfg = self.chase._cfg_src
 		if not isinstance(cfg, ChasePolicyConfig):
 			return
-		self.chase._cfg_src = replace(cfg, lure_speed_mm_s=80.0)
+		# Why: Ace cannot split Mini and carriage closer than ACE_SEP_MM.
+		self.chase._cfg_src = replace(
+			cfg,
+			lure_speed_mm_s=80.0,
+			ace_sep_mm=ACE_SEP_MM,
+			min_gap_mm=max(cfg.min_gap_mm, ACE_SEP_MM),
+			preferred_gap_mm=max(cfg.preferred_gap_mm, ACE_SEP_MM + 80.0),
+		)
 		self.chase._refit()
 
 	def _stop_animal(self) -> None:

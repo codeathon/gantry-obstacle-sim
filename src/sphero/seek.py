@@ -28,7 +28,13 @@ def seek_command(
 	# Why: fill_tracking_derived uses 0=right, 90=up (Y flipped).
 	heading = math.degrees(math.atan2(-dy, dx)) + aim_offset_deg
 	heading = heading % 360.0
-	speed = 0.0 if dist <= arrive_mm else max_speed
+	speed = max_speed
+	if dist <= arrive_mm:
+		# Why: inside the Ace merge disc the hunt deadlocks; back out.
+		if arrive_mm >= 100.0 and dist < arrive_mm * 0.7:
+			heading = (heading + 180.0) % 360.0
+		else:
+			speed = 0.0
 	if bounds is None or wall_margin_mm <= 0.0:
 		return speed, heading
 	# Why: Mini has no firmware rails; reuse gantry travel so it cannot pin on a wall.

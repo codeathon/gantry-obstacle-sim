@@ -97,7 +97,7 @@ PREY_ANIMAL=ferret PREY_ACE=1 PREY_ZABER=1 PREY_ZABER_REQUIRE=1 \
   ZABER_PORT=/dev/ttyUSB0 PYTHONPATH=src python -m simulation.web
 ```
 
-Aim the Mini tail LED along arena +X once so heading 0 matches Ace +X. `PREY_SPHERO_REQUIRE=1` fails if BLE is missing in sphero mode. Optional `SPHERO_NAME` selects the toy. `SPHERO_STUB=1` keeps the in-memory Mini (tests / no radio). Seek reuses the gantry travel box and wall margin so the ball turns back instead of pinning on the enclosure.
+Aim the Mini tail LED along arena +X once so heading 0 matches Ace +X. `PREY_SPHERO_REQUIRE=1` fails if BLE is missing in sphero mode. Optional `SPHERO_NAME` selects the toy. `SPHERO_STUB=1` keeps the in-memory Mini (tests / no radio). Seek reuses the gantry travel box and wall margin so the ball turns back instead of pinning on the enclosure. Mini and toy stay at least 250 mm apart so Ace does not merge them into one blob and deadlock the hunt.
 
 ### Mini BLE check (no Ace / gantry)
 

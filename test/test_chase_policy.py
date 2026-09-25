@@ -134,6 +134,25 @@ def test_lure_waits_until_mini_moves():
 	assert abs(d.target_vx_mm_s) <= 40.0
 
 
+def test_lure_opens_gap_when_ace_would_merge():
+	# Why: wait/creep on a close pair merges the blobs and freezes the hunt.
+	from dataclasses import replace
+
+	from chase.config import ACE_SEP_MM
+
+	cfg = replace(
+		_cfg().chase, lure_speed_mm_s=80.0, min_gap_mm=ACE_SEP_MM, ace_sep_mm=ACE_SEP_MM
+	)
+	d = compute_chase_decision(
+		_scene(400, 600, 500, 600, heading=0.0, speed=0.0),
+		cfg,
+		1987.0,
+		1242.0,
+	)
+	assert d.reason == "lead_away"
+	assert d.target_vx_mm_s > 0
+
+
 def test_lure_leads_slowly_when_mini_closes():
 	from dataclasses import replace
 

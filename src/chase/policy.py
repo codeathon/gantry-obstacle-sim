@@ -250,6 +250,9 @@ def _lure_prey(
 	tx, ty, dist = _norm(fx - scene.prey.x_mm, fy - scene.prey.y_mm)
 	if dist > cfg.preferred_gap_mm:
 		return tx * min(cap, 80.0), ty * min(cap, 80.0), "reel_in"
+	if dist < cfg.min_gap_mm:
+		# Why: Ace merges the two blobs; holding here deadlocks the hunt.
+		return -tx * min(cap, 70.0), -ty * min(cap, 70.0), "lead_away"
 	if not _hunter_following(scene):
 		if dist > cfg.min_gap_mm + 20.0:
 			creep = min(40.0, cap * 0.5)

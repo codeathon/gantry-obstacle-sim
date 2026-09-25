@@ -39,10 +39,16 @@ def fit_chase_policy(cfg: ChasePolicyConfig, box: ArenaBounds) -> ChasePolicyCon
 	# Why: FOV gaps (420 mm) pin a short X-MCC axis against one firmware wall.
 	span = min(box.width_mm, box.height_mm)
 	pref = min(cfg.preferred_gap_mm, span * 0.35)
+	min_gap = min(cfg.min_gap_mm, span * 0.15)
+	if cfg.ace_sep_mm > 0.0:
+		# Why: shrinking min_gap lets lure park the toy on the Mini; Ace merges.
+		sep = min(cfg.ace_sep_mm, span * 0.45)
+		min_gap = max(min_gap, sep)
+		pref = max(pref, min(cfg.preferred_gap_mm, sep + 80.0))
 	return replace(
 		cfg,
 		preferred_gap_mm=pref,
-		min_gap_mm=min(cfg.min_gap_mm, span * 0.15),
+		min_gap_mm=min_gap,
 		max_pull_mm=min(cfg.max_pull_mm, span * 0.30),
 		wall_margin_mm=min(cfg.wall_margin_mm, span * 0.18),
 		threat_distance_mm=min(cfg.threat_distance_mm, pref),

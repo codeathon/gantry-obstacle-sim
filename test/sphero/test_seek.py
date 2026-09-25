@@ -85,6 +85,18 @@ def test_outside_wall_rolls_back_in() -> None:
 	assert _vx(cmd) < 0.0
 
 
+def test_backs_off_when_ace_would_merge() -> None:
+	# Why: Mini parked on the toy deadlocks Ace into one blob.
+	cmd = seek_command(
+		TrackState(0.0, 0.0, valid=True),
+		TrackState(100.0, 0.0, valid=True),
+		arrive_mm=250.0,
+	)
+	assert cmd is not None
+	assert cmd[0] == 180.0
+	assert abs(cmd[1] - 180.0) < 1.0
+
+
 def test_open_field_seek_unchanged() -> None:
 	from chase.bounds import ArenaBounds
 
