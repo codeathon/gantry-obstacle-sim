@@ -35,10 +35,8 @@ def _drive_square(toy: object, seconds: float, speed: float) -> None:
 	print("connected; rolling 0 / 90 / 180 / 270 deg", flush=True)
 	for heading in _HEADINGS:
 		print(f"roll speed={speed:.0f} heading={heading} for {seconds:.1f}s", flush=True)
-		# Why: Edu roll() blocks for duration; do not sleep the same interval twice.
+		# Why: Edu roll() blocks and already stops; extra stop_roll kills the GATT link.
 		toy.roll(speed, heading, duration=seconds)
-		toy.stop()
-		# Why: Mini needs a short settle between back-to-back rolls.
 		time.sleep(0.4)
 	print("ok: Mini accepted roll commands", flush=True)
 

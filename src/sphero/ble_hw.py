@@ -43,14 +43,21 @@ class BleSphero:
 		)
 
 	def stop(self) -> None:
+		# Why: after a timed roll the GATT link often dies; teardown must not fail the check.
 		fn = getattr(self._api, "stop_roll", None) or getattr(self._api, "stop", None)
-		if callable(fn):
-			fn()
+		_ble_ignore(fn)
 
 	def close(self) -> None:
-		exit_fn = getattr(self._api, "__exit__", None)
-		if callable(exit_fn):
-			exit_fn(None, None, None)
+		_ble_ignore(lambda: self._api.__exit__(None, None, None))
+
+
+def _ble_ignore(fn) -> None:
+	if not callable(fn):
+		return
+	try:
+		fn()
+	except Exception:
+		return
 
 
 def _led_color(r: int, g: int, b: int):

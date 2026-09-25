@@ -11,6 +11,14 @@ class _Api:
 		self.args = (heading, speed, duration)
 
 
+def test_stop_swallows_dead_gatt() -> None:
+	class _Dead:
+		def stop_roll(self) -> None:
+			raise TimeoutError()
+
+	BleSphero(_Dead()).stop()
+
+
 def test_roll_sends_heading_speed_duration() -> None:
 	api = _Api()
 	BleSphero(api).roll(80.0, 90.0, duration=1.5)
