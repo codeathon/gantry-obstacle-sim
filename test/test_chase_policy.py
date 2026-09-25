@@ -60,6 +60,27 @@ def test_far_reels_back_to_keep_hunt_alive():
 	)
 	assert d.reason == "reel_in"
 	assert d.target_vx_mm_s < 0
+	# Why: a crawl looked parked once the toy sat outside the gold ring.
+	assert d.target_vx_mm_s <= -180.0
+
+
+def test_rail_edge_reels_in_instead_of_parking():
+	# Why: wall push used to cancel reel-in at x_max so the hunt froze.
+	from chase.bounds import ArenaBounds, fit_chase_policy
+
+	cfg = _cfg()
+	box = ArenaBounds(70.0, 738.0, 70.0, 808.0)
+	fitted = fit_chase_policy(cfg.chase, box)
+	d = compute_chase_decision(
+		_scene(400, 440, 738, 440, heading=0.0, speed=100.0),
+		fitted,
+		box.width_mm,
+		box.height_mm,
+		box,
+	)
+	assert d.reason == "reel_in"
+	assert d.enable_motion
+	assert d.target_vx_mm_s < -100.0
 
 
 def test_short_travel_does_not_pin_x_to_fov_center():
@@ -93,4 +114,5 @@ def test_corner_pushes_inward():
 	assert d.wall_push > 0.3
 	assert d.target_vx_mm_s > 0
 	assert d.target_vy_mm_s > 0
-	assert d.reason == "edge_dodge"
+	# Why: far + corner is reel-in first so the hunt does not freeze on a wall.
+	assert d.reason in ("edge_dodge", "reel_in")

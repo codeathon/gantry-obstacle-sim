@@ -75,6 +75,10 @@ class Experiment:
 		delivered = self._ingest_camera(cam_frame)
 		# Why: encoder is live; refresh toy XY even when the Ace has no new frame.
 		if self.last_scene is not None:
+			if cam_frame is None:
+				# Why: timeout=0 empty retrieves are not a dead camera; 80 ms
+				# stale-stop used to freeze the toy between Ace frames.
+				self.last_scene.host_time_ns = time.time_ns()
 			self._stamp_encoder_prey(self.last_scene, arena=True)
 			self._submit_chase(self.last_scene)
 			self._offer_animal(self.last_scene)
