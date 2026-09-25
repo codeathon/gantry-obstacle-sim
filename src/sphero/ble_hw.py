@@ -70,6 +70,18 @@ def _led_color(r: int, g: int, b: int):
 
 
 def connect_ble() -> BleSphero:
+	# Why: uvicorn already runs an event loop; Bleak's asyncio.run() needs a bare thread.
+	# Stay on this thread when there is no loop (demo_roll / sphero-seek).
+	import asyncio
+
+	try:
+		asyncio.get_running_loop()
+	except RuntimeError:
+		return _connect_ble_locked()
+	return _call_in_fresh_thread(_connect_ble_locked)
+
+
+def _connect_ble_locked() -> BleSphero:
 	from spherov2 import scanner
 	from spherov2.sphero_edu import SpheroEduAPI
 
@@ -77,4 +89,26 @@ def connect_ble() -> BleSphero:
 	toy = scanner.find_toy(toy_name=name) if name else scanner.find_toy()
 	api = SpheroEduAPI(toy)
 	api.__enter__()
+	print(f"Sphero BLE connected {name or toy}", flush=True)
 	return BleSphero(api)
+
+
+def _call_in_fresh_thread(fn):
+	import threading
+
+	box: dict = {}
+
+	def run() -> None:
+		try:
+			box["ok"] = fn()
+		except BaseException as exc:
+			box["err"] = exc
+
+	th = threading.Thread(target=run, name="sphero-ble-open", daemon=True)
+	th.start()
+	th.join(timeout=30.0)
+	if "err" in box:
+		raise box["err"]
+	if "ok" not in box:
+		raise TimeoutError("Sphero BLE open timed out")
+	return box["ok"]

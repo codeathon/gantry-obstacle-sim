@@ -31,7 +31,7 @@ pip install -e ".[dev]"
 PYTHONPATH=src python -m simulation.web
 ```
 
-Open http://127.0.0.1:8765 — **S** start trial, **E** end, **R** reset.
+Open the HUD (or `xdg-open http://127.0.0.1:8765`) — **S** start trial, **E** end, **R** reset.
 
 ```bash
 PYTHONPATH=src pytest
@@ -85,7 +85,9 @@ Ace is the animal pose. The encoder is the prey pose. The Mini IMU is not used f
 ```bash
 pip install -e ".[pylon,zaber,sphero]"
 PREY_ANIMAL=sphero PREY_ACE=1 PREY_ZABER=1 PREY_ZABER_REQUIRE=1 \
+  SPHERO_NAME=SM-6399 \
   ZABER_PORT=/dev/ttyUSB0 PYTHONPATH=src python -m simulation.web
+xdg-open http://127.0.0.1:8765
 ```
 
 Real ferret (Sphero code stays, runner does not connect):

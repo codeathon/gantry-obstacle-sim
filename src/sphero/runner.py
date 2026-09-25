@@ -9,8 +9,14 @@ from vision.tracking_frame import TrackingFrame
 
 
 class SpheroRunner:
-	def __init__(self, toy: object, period_s: float = 0.08) -> None:
+	def __init__(
+		self,
+		toy: object | None = None,
+		period_s: float = 0.08,
+		factory=None,
+	) -> None:
 		self._toy = toy
+		self._factory = factory
 		self._period_s = period_s
 		self._lock = threading.Lock()
 		self._scene: TrackingFrame | None = None
@@ -21,9 +27,10 @@ class SpheroRunner:
 		if self._thread is not None:
 			return
 		self._stop.clear()
-		connect = getattr(self._toy, "connect", None)
-		if callable(connect) and not getattr(self._toy, "connected", True):
-			connect()
+		if self._toy is not None:
+			connect = getattr(self._toy, "connect", None)
+			if callable(connect) and not getattr(self._toy, "connected", True):
+				connect()
 		self._thread = threading.Thread(
 			target=self._run, name="sphero-seek", daemon=True
 		)
@@ -47,6 +54,9 @@ class SpheroRunner:
 			self._scene = scene
 
 	def _run(self) -> None:
+		# Why: find_toy uses asyncio.run; this thread has no uvicorn loop.
+		if self._toy is None and self._factory is not None:
+			self._toy = self._factory()
 		while not self._stop.is_set():
 			self._tick()
 			if self._stop.wait(self._period_s):
@@ -55,7 +65,7 @@ class SpheroRunner:
 	def _tick(self) -> None:
 		with self._lock:
 			scene = self._scene
-		if scene is None:
+		if scene is None or self._toy is None:
 			return
 		cmd = seek_command(scene.ferret, scene.prey, scene.trial_phase)
 		if cmd is None:

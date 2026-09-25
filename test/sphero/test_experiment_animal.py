@@ -22,6 +22,29 @@ def test_ferret_mode_does_not_connect_sphero(monkeypatch) -> None:
 	assert exp.sphero_status() == {"animal": "ferret", "backend": "off"}
 
 
+def test_sphero_factory_opens_off_start_thread(monkeypatch) -> None:
+	# Why: HuntSim starts on uvicorn; find_toy must not use that loop.
+	import threading
+
+	seen: list[str] = []
+
+	def factory():
+		seen.append(threading.current_thread().name)
+		toy = SpheroStub()
+		toy.connect()
+		return toy
+
+	monkeypatch.setenv("PREY_ANIMAL", "sphero")
+	monkeypatch.setattr("sphero.factory.open_sphero", factory)
+	exp = Experiment(ZaberGantry(), AceCamera())
+	exp.start()
+	deadline = time.perf_counter() + 0.5
+	while not seen and time.perf_counter() < deadline:
+		time.sleep(0.005)
+	exp.shutdown()
+	assert seen == ["sphero-seek"]
+
+
 def test_sphero_mode_offers_scene(monkeypatch) -> None:
 	monkeypatch.setenv("PREY_ANIMAL", "sphero")
 	toy = SpheroStub()

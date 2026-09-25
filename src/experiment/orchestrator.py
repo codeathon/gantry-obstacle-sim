@@ -129,9 +129,11 @@ class Experiment:
 
 		if not want_sphero():
 			return
-		if self._sphero is None:
-			self._sphero = open_sphero()
-		self._sphero_runner = SpheroRunner(self._sphero)
+		# Why: uvicorn already has an event loop; Bleak asyncio.run() must not run here.
+		if self._sphero is not None:
+			self._sphero_runner = SpheroRunner(self._sphero)
+		else:
+			self._sphero_runner = SpheroRunner(factory=open_sphero)
 		self._sphero_runner.start()
 
 	def _stop_animal(self) -> None:
@@ -149,8 +151,11 @@ class Experiment:
 		from sphero.animal import animal_name
 
 		backend = "off"
-		if self._sphero is not None:
-			backend = str(getattr(self._sphero, "backend", "stub"))
+		toy = self._sphero
+		if self._sphero_runner is not None:
+			toy = getattr(self._sphero_runner, "_toy", None) or toy
+		if toy is not None:
+			backend = str(getattr(toy, "backend", "stub"))
 		return {"animal": animal_name(), "backend": backend}
 
 	def _ingest_camera(self, cam_frame) -> TrackingFrame | None:
