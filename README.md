@@ -99,6 +99,14 @@ PREY_ANIMAL=ferret PREY_ACE=1 PREY_ZABER=1 PREY_ZABER_REQUIRE=1 \
 
 Aim the Mini tail LED along arena +X once so heading 0 matches Ace +X. `PREY_SPHERO_REQUIRE=1` fails if BLE is missing in sphero mode. Optional `SPHERO_NAME` selects the toy. `SPHERO_STUB=1` keeps the in-memory Mini (tests / no radio). Seek reuses the gantry travel box and wall margin so the ball turns back instead of pinning on the enclosure. Mini and toy stay at least 250 mm apart so Ace does not merge them into one blob and deadlock the hunt.
 
+If the web log says `Sphero BLE unavailable … using SpheroStub`, the hunt is not talking to SM-6399. Wake the ball (double-tap or a few seconds on the charger until it blinks), then:
+
+```bash
+SPHERO_NAME=SM-6399 PYTHONPATH=src python -m sphero.demo_roll
+```
+
+`sudo hciconfig hci0 up` if the adapter is DOWN. Restart the hunt only after demo_roll moves the Mini. Add `PREY_SPHERO_REQUIRE=1` so a dead radio cannot silently fall back to the stub.
+
 ### Mini BLE check (no Ace / gantry)
 
 Wake the ball, then roll a small square (0 / 90 / 180 / 270°) over BLE only:

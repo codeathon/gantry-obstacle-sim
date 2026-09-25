@@ -25,6 +25,23 @@ def test_connect_ble_hops_off_running_loop(monkeypatch) -> None:
 	assert seen == ["sphero-ble-open"]
 
 
+def test_scan_retries_then_connects(monkeypatch) -> None:
+	# Why: one missed advertisement used to drop the hunt onto SpheroStub.
+	from sphero.ble_hw import _scan_toy
+
+	n = {"i": 0}
+
+	class Scan:
+		def find_toy(self, toy_name=None):
+			n["i"] += 1
+			if n["i"] < 2:
+				raise RuntimeError()
+			return "SM-6399"
+
+	monkeypatch.setattr("time.sleep", lambda _s: None)
+	assert _scan_toy(Scan(), "SM-6399") == "SM-6399"
+
+
 def test_connect_ble_stays_on_bare_thread(monkeypatch) -> None:
 	# Why: demo_roll and sphero-seek have no loop; keep GATT on that thread.
 	seen: list[str] = []

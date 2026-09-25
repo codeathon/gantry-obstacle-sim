@@ -86,11 +86,28 @@ def _connect_ble_locked() -> BleSphero:
 	from spherov2.sphero_edu import SpheroEduAPI
 
 	name = os.environ.get("SPHERO_NAME", "").strip() or None
-	toy = scanner.find_toy(toy_name=name) if name else scanner.find_toy()
+	toy = _scan_toy(scanner, name)
 	api = SpheroEduAPI(toy)
 	api.__enter__()
 	print(f"Sphero BLE connected {name or toy}", flush=True)
 	return BleSphero(api)
+
+
+def _scan_toy(scanner, name: str | None):
+	# Why: Mini stops advertising after a long hunt or a dead battery.
+	import time
+
+	last: BaseException | None = None
+	for _ in range(3):
+		try:
+			toy = scanner.find_toy(toy_name=name) if name else scanner.find_toy()
+			if toy is not None:
+				return toy
+			last = RuntimeError(f"no Sphero advertising as {name or 'any Mini'}")
+		except Exception as exc:
+			last = exc
+		time.sleep(1.5)
+	raise last or RuntimeError("Sphero BLE scan failed")
 
 
 def _call_in_fresh_thread(fn):
