@@ -120,9 +120,12 @@ def _numpy_ferret(img, bg, prey_px, exclude_px: float, min_area: float, associat
 	bg_f = bg if getattr(bg, "dtype", None) is not None else np.asarray(bg, dtype=np.float32)
 	mask = np.abs(img.astype(np.float32) - bg_f) > 20.0
 	raw = _numpy_blobs(mask, min_area)
-	# Why: one FOV blob with the encoder in-frame is the toy, not a ferret.
-	kept = _drop_toy(raw, prey_px, img.shape[1], img.shape[0], exclude_px)
-	picked = associator.pick_ferret(kept, prior_px)
+	# Why: Mini hunts must not drop the ball when it sits on the encoder disc.
+	if getattr(associator._p, "prefer_compact", False):
+		picked = associator.pick_ferret(raw, prior_px, prey_px=prey_px)
+	else:
+		kept = _drop_toy(raw, prey_px, img.shape[1], img.shape[0], exclude_px)
+		picked = associator.pick_ferret(kept, prior_px)
 	ids = _id_blobs(raw, picked, prey_px, exclude_px)
 	if picked is None:
 		return None, ids
