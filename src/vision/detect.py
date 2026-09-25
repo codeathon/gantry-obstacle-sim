@@ -120,7 +120,7 @@ def _numpy_ferret(img, bg, prey_px, exclude_px: float, min_area: float, associat
 	bg_f = bg if getattr(bg, "dtype", None) is not None else np.asarray(bg, dtype=np.float32)
 	mask = np.abs(img.astype(np.float32) - bg_f) > 20.0
 	raw = _numpy_blobs(mask, min_area)
-	# Why: Mini hunts must not drop the ball when it sits on the encoder disc.
+	# Why: Mini and carriage match in area; keep both and let encoder mark the toy.
 	if getattr(associator._p, "prefer_compact", False):
 		picked = associator.pick_ferret(raw, prior_px, prey_px=prey_px)
 	else:
@@ -229,7 +229,9 @@ def _flood(small, seen, y0: int, x0: int, step: int) -> tuple[Blob, float]:
 				seen[ny, nx] = 1
 				stack.append((ny, nx))
 	span = max(xmax - xmin, ymax - ymin) * step
-	return Blob((sx / n) * step, (sy / n) * step, float(n * step * step)), span
+	return Blob(
+		(sx / n) * step, (sy / n) * step, float(n * step * step), float(span)
+	), span
 
 
 def _away_from_prey(shape, prey_px, exclude_px: float):

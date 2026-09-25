@@ -106,8 +106,8 @@ def test_overlay_omits_third_leftover_blob() -> None:
 	assert sorted(b.label for b in ids) == ["ferret", "toy"]
 
 
-def test_compact_numpy_keeps_mini_on_encoder() -> None:
-	# Why: _drop_toy used to erase the Mini when the lure reeled in.
+def test_same_size_numpy_encoder_keeps_mini() -> None:
+	# Why: Mini and carriage match in area; encoder-nearest must stay the toy.
 	import numpy as np
 	from vision.associator import ObjectAssociator, VisionPriors
 	from vision.detect import _numpy_ferret
@@ -123,16 +123,16 @@ def test_compact_numpy_keeps_mini_on_encoder() -> None:
 	bg = np.zeros((32, 32), dtype=np.float32)
 	img = np.zeros((32, 32), dtype=np.uint8)
 	img[14:19, 4:9] = 255
-	img[2:12, 20:28] = 255
-	hit, ids = _numpy_ferret(img, bg, (6.0, 16.0), 8.0, 4.0, assoc, (24.0, 7.0))
+	img[14:19, 20:25] = 255
+	hit, ids = _numpy_ferret(img, bg, (22.0, 16.0), 8.0, 4.0, assoc, (22.0, 16.0))
 	assert hit is not None
 	assert abs(hit[0] - 6.0) < 2.0
 	ferret = next(b for b in ids if b.label == "ferret")
 	assert abs(ferret.x_px - 6.0) < 2.0
 
 
-def test_overlay_mini_on_encoder_not_leftover() -> None:
-	# Why: gold Ace ferret must stay on the Mini when the toy reels in.
+def test_overlay_same_size_gold_on_mini() -> None:
+	# Why: gold Ace ferret must sit on the Mini, not the same-area carriage.
 	from vision.associator import Blob, ObjectAssociator, VisionPriors
 	from vision.detect import _id_blobs
 
@@ -142,9 +142,9 @@ def test_overlay_mini_on_encoder_not_leftover() -> None:
 		prefer_compact=True,
 		ferret_area_px_pref=1600.0,
 	)
-	mini = Blob(20.0, 40.0, area_px=1500.0)
-	gantry = Blob(400.0, 40.0, area_px=7000.0)
-	prey = (22.0, 41.0)
+	mini = Blob(20.0, 40.0, area_px=1600.0)
+	gantry = Blob(400.0, 40.0, area_px=1600.0)
+	prey = (400.0, 40.0)
 	picked = ObjectAssociator(priors).pick_ferret(
 		[mini, gantry], prior_px=(400.0, 40.0), prey_px=prey
 	)

@@ -11,6 +11,8 @@ class Blob:
 	x_px: float
 	y_px: float
 	area_px: float
+	# Why: Mini is round; a same-area gantry leftover is usually longer.
+	span_px: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,7 @@ class VisionPriors:
 	ferret_area_px_min: float = 200.0
 	ferret_area_px_max: float = 60000.0
 	proximity_px: float = 120.0
-	# Why: Mini is ~1–4k px; the old mid-band score preferred the XXY carriage.
+	# Why: Mini and XXY carriage are the same Ace area; encoder marks the toy.
 	prefer_compact: bool = False
 	ferret_area_px_pref: float = 1600.0
 
@@ -36,7 +38,7 @@ class ObjectAssociator:
 	) -> Blob | None:
 		# Why: area prior rejects chain/pulley leftovers; proximity keeps ID.
 		if self._p.prefer_compact:
-			# Why: Mini near the encoder used to be dropped; leftover gantry won.
+			# Why: size cannot tell Mini from carriage; encoder-nearest is toy.
 			return _pick_mini(blobs, self._p, prior_px, prey_px)
 		best: Blob | None = None
 		best_score = -1.0
@@ -65,24 +67,20 @@ def _pick_mini(
 	]
 	if not cands:
 		return None
+	# Encoder is bolted to the gantry. Do not score Mini vs carriage by area.
 	toy = _nearest(cands, prey_px)
-	away = [b for b in cands if toy is None or b is not toy]
-	away_minis = [b for b in away if _is_mini(b, p)]
-	# Encoder sits on the Mini; leftover beams stay discarded.
-	if toy is not None and _is_mini(toy, p):
-		best_away = max((_compact(b.area_px, p) for b in away_minis), default=-1.0)
-		if _compact(toy.area_px, p) > best_away + 0.1:
-			return toy
-	if away_minis:
-		return _best_compact(away_minis, p, prior_px, prey_px)
-	if toy is not None and _is_mini(toy, p):
+	if toy is None:
+		return None
+	away = [b for b in cands if b is not toy]
+	if away:
+		hit = _best_away(away, p, prior_px)
+		if hit is not None and not _beam_like(hit):
+			return hit
+		# Leftover is a beam; Mini is sitting on the encoder.
+		return toy if not _beam_like(toy) else None
+	if _dist(toy, prey_px) > p.proximity_px:
 		return toy
 	return None
-
-
-def _is_mini(blob: Blob, p: VisionPriors) -> bool:
-	# Why: 0.35 keeps the 1–4k Mini and rejects a 7k XXY leftover.
-	return _compact(blob.area_px, p) >= 0.35
 
 
 def _nearest(blobs: list[Blob], prey_px: tuple[float, float] | None) -> Blob | None:
@@ -94,24 +92,32 @@ def _nearest(blobs: list[Blob], prey_px: tuple[float, float] | None) -> Blob | N
 	)
 
 
-def _best_compact(
-	blobs: list[Blob],
-	p: VisionPriors,
-	prior_px: tuple[float, float] | None,
-	prey_px: tuple[float, float] | None,
+def _best_away(
+	blobs: list[Blob], p: VisionPriors, prior_px: tuple[float, float] | None
 ) -> Blob | None:
 	best: Blob | None = None
 	best_s = -1.0
 	for b in blobs:
-		s = 0.7 * _compact(b.area_px, p)
-		if prey_px is not None:
-			dist = math.hypot(b.x_px - prey_px[0], b.y_px - prey_px[1])
-			s += 0.25 * min(dist / 220.0, 1.0)
-		s += 0.15 * _proximity(b.x_px, b.y_px, prior_px, p.proximity_px)
+		rnd = _roundness(b) if b.span_px >= 1.0 else 0.5
+		s = 0.7 * rnd + 0.3 * _proximity(b.x_px, b.y_px, prior_px, p.proximity_px)
 		if s > best_s:
 			best_s = s
 			best = b
 	return best
+
+
+def _beam_like(blob: Blob) -> bool:
+	# Why: a long same-area leftover is not the Mini.
+	return blob.span_px >= 1.0 and _roundness(blob) < 0.25
+
+
+def _roundness(blob: Blob) -> float:
+	span = max(blob.span_px, 1.0)
+	return min(blob.area_px / (span * span), 1.0)
+
+
+def _dist(blob: Blob, prey_px: tuple[float, float]) -> float:
+	return math.hypot(blob.x_px - prey_px[0], blob.y_px - prey_px[1])
 
 
 def _score_blob(blob: Blob, p: VisionPriors, prior_px) -> float:

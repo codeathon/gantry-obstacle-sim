@@ -46,7 +46,7 @@ def _select_camera(cam):
 
 
 def _animal_detector(gsd: float):
-	# Why: Mini is compact; default area mid-band picked the gantry as ferret.
+	# Why: Mini and carriage match in area; encoder-nearest is the toy.
 	from sphero.animal import want_sphero
 	from vision.associator import ObjectAssociator, VisionPriors
 	from vision.detect import AnimalDetector

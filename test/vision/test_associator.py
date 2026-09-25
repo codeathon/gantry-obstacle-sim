@@ -36,36 +36,37 @@ def _mini_assoc() -> ObjectAssociator:
 	)
 
 
-def test_compact_prior_picks_mini_over_gantry() -> None:
-	# Why: default mid-band score treated the XXY carriage as the ferret.
-	gantry = Blob(80.0, 40.0, area_px=7000.0)
-	mini = Blob(20.0, 40.0, area_px=1500.0)
-	assert _mini_assoc().pick_ferret([gantry, mini]) is mini
+def test_same_size_encoder_nearest_is_toy() -> None:
+	# Why: live Mini and XXY carriage are about the same Ace area.
+	gantry = Blob(80.0, 40.0, area_px=1600.0)
+	mini = Blob(20.0, 40.0, area_px=1600.0)
+	assoc = _mini_assoc()
+	assert assoc.pick_ferret([gantry, mini], prey_px=(80.0, 40.0)) is mini
+	# A stuck prior on the carriage must not flip the gold mark.
+	assert assoc.pick_ferret(
+		[gantry, mini], prior_px=(80.0, 40.0), prey_px=(80.0, 40.0)
+	) is mini
 
 
-def test_compact_mini_near_encoder_beats_leftover_gantry() -> None:
-	# Why: lure parks the encoder on the Mini; leftover beam must not steal the ID.
-	gantry = Blob(80.0, 40.0, area_px=7000.0)
-	mini = Blob(20.0, 40.0, area_px=1500.0)
-	stuck = (80.0, 40.0)
-	hit = _mini_assoc().pick_ferret(
-		[gantry, mini], prior_px=stuck, prey_px=(22.0, 41.0)
-	)
+def test_same_size_beam_leftover_does_not_steal_mini() -> None:
+	# Why: lure parks the encoder on the Mini; a long leftover is not the animal.
+	beam = Blob(80.0, 40.0, area_px=1600.0, span_px=100.0)
+	mini = Blob(20.0, 40.0, area_px=1600.0, span_px=40.0)
+	hit = _mini_assoc().pick_ferret([beam, mini], prey_px=(22.0, 41.0))
 	assert hit is mini
 
 
-def test_compact_picks_far_mini_when_encoder_is_on_gantry() -> None:
-	gantry = Blob(80.0, 40.0, area_px=7000.0)
-	mini = Blob(20.0, 40.0, area_px=1500.0)
-	assert _mini_assoc().pick_ferret([gantry, mini], prey_px=(80.0, 40.0)) is mini
-
-
-def test_compact_rejects_lone_large_gantry() -> None:
-	# Why: empty arena except a beam leftover — do not invent a Mini.
-	gantry = Blob(80.0, 40.0, area_px=7000.0)
+def test_same_size_rejects_lone_encoder_blob() -> None:
+	# Why: empty arena except the carriage — do not invent a Mini.
+	gantry = Blob(80.0, 40.0, area_px=1600.0)
 	assoc = _mini_assoc()
 	assert assoc.pick_ferret([gantry], prey_px=(80.0, 40.0)) is None
 	assert assoc.pick_ferret([gantry]) is None
+
+
+def test_lone_mini_far_from_encoder_is_kept() -> None:
+	mini = Blob(20.0, 40.0, area_px=1600.0)
+	assert _mini_assoc().pick_ferret([mini], prey_px=(200.0, 40.0)) is mini
 
 
 def test_rejects_blobs_outside_the_ferret_area_band() -> None:
