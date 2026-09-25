@@ -256,13 +256,13 @@ class HuntSim:
 
 	def _travel_dict(self) -> dict:
 		# Why: HUD box is the mapped window (full FOV); enc_* is firmware travel.
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
 		return {
 			"x_min": 0.0,
-			"x_max": cam.width_mm,
+			"x_max": fov_w,
 			"y_min": 0.0,
-			"y_max": cam.height_mm,
+			"y_max": fov_h,
 			"enc_x_min": box.x_min,
 			"enc_x_max": box.x_max,
 			"enc_y_min": box.y_min,
@@ -306,28 +306,33 @@ class HuntSim:
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
 		return TrackState(x, y, spd, heading, True)
 
+	def _arena_mm(self) -> tuple[float, float]:
+		# Why: Charuco/Ace FOV is the canvas; sim.json a2A1920 1987×1242
+		# stretched the toy past the window when serial 24676894 is live.
+		return float(self.exp._fov_w), float(self.exp._fov_h)
+
 	def _encoder_to_arena(
 		self, x: float, y: float, vx: float, vy: float
 	) -> tuple[float, float, float, float]:
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
-		ax, ay = gantry_to_arena(x, y, box, cam.width_mm, cam.height_mm)
-		avx, avy = scale_vel(vx, vy, box, cam.width_mm, cam.height_mm, to_arena=True)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
+		ax, ay = gantry_to_arena(x, y, box, fov_w, fov_h)
+		avx, avy = scale_vel(vx, vy, box, fov_w, fov_h, to_arena=True)
 		return ax, ay, avx, avy
 
 	def _to_arena_track(self, t: TrackState) -> TrackState:
 		if not t.valid:
 			return t
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
-		x, y = gantry_to_arena(t.x_mm, t.y_mm, box, cam.width_mm, cam.height_mm)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
+		x, y = gantry_to_arena(t.x_mm, t.y_mm, box, fov_w, fov_h)
 		return TrackState(x, y, t.speed_mm_s, t.direction_deg, True, t.x_px, t.y_px)
 
 	def _policy_dict(self) -> dict:
 		pol = asdict(self.controller._cfg or self.cfg.chase)
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
-		s = 0.5 * (cam.width_mm / box.width_mm + cam.height_mm / box.height_mm)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
+		s = 0.5 * (fov_w / box.width_mm + fov_h / box.height_mm)
 		if s <= 1.01:
 			return pol
 		# Why: rings are drawn in FOV mm; chase gaps stay in rail mm.

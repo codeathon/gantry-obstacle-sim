@@ -247,7 +247,7 @@ function hudZaber(s) {
 		${row("busy", String(z.busy), z.busy ? "warn" : "ok")}
 		${row("position", `${z.x_mm.toFixed(1)}, ${z.y_mm.toFixed(1)} mm`)}
 		${row("encoder", `${(z.enc_x_mm != null ? z.enc_x_mm : z.x_mm).toFixed(1)}, ${(z.enc_y_mm != null ? z.enc_y_mm : z.y_mm).toFixed(1)} mm`)}
-		${row("encoder frame", "rails scaled to full FOV")}
+		${row("encoder frame", "rails scaled to Ace/Charuco FOV")}
 		${row("travel", `rails ${(z.enc_x_min != null ? z.enc_x_min : 0).toFixed(0)}–${(z.enc_x_max != null ? z.enc_x_max : z.x_max).toFixed(0)} × ${(z.enc_y_min != null ? z.enc_y_min : 0).toFixed(0)}–${(z.enc_y_max != null ? z.enc_y_max : z.y_max).toFixed(0)} mm`)}
 		${row("velocity", `${z.speed_mm_s.toFixed(0)} mm/s  ${z.heading_deg.toFixed(0)}°`)}
 		${row("limits", `${z.max_speed_mm_s} mm/s · ${z.max_accel_mm_s2} mm/s²`)}
