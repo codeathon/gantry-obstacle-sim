@@ -96,3 +96,14 @@ PREY_ANIMAL=ferret PREY_ACE=1 PREY_ZABER=1 PREY_ZABER_REQUIRE=1 \
 ```
 
 Aim the Mini tail LED along arena +X once so heading 0 matches Ace +X. `PREY_SPHERO_REQUIRE=1` fails if BLE is missing in sphero mode. Optional `SPHERO_NAME` selects the toy. `SPHERO_STUB=1` keeps the in-memory Mini (tests / no radio).
+
+### Mini BLE check (no Ace / gantry)
+
+Wake the ball, then roll a small square (0 / 90 / 180 / 270°) over BLE only:
+
+```bash
+pip install -e ".[sphero]"
+SPHERO_NAME=SM-6399 PYTHONPATH=src python -m sphero.demo_roll
+```
+
+Or: `SPHERO_NAME=SM-6399 SPHERO_LIVE=1 PYTHONPATH=src pytest test/sphero/test_ble_move.py -s`

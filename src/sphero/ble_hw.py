@@ -24,6 +24,11 @@ class BleSphero:
 		if callable(set_h):
 			set_h(0)
 
+	def set_led(self, r: int, g: int, b: int) -> None:
+		fn = getattr(self._api, "set_main_led", None)
+		if callable(fn):
+			fn(int(r), int(g), int(b))
+
 	def roll(self, speed: float, heading_deg: float) -> None:
 		# Why: Edu API is roll(heading, speed); we store speed-first in the protocol.
 		self._api.roll(int(heading_deg) % 360, int(max(0.0, min(255.0, speed))))

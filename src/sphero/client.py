@@ -23,6 +23,10 @@ class SpheroStub:
 		self.calls.append("aim")
 		self.heading_deg = 0.0
 
+	def set_led(self, r: int, g: int, b: int) -> None:
+		del r, g, b
+		self.calls.append("set_led")
+
 	def roll(self, speed: float, heading_deg: float) -> None:
 		# Why: Mini roll expires; the runner re-issues this on its own thread.
 		self.speed = float(speed)
