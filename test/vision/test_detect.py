@@ -149,8 +149,10 @@ def test_overlay_same_size_gold_on_mini() -> None:
 		[mini, gantry], prior_px=(400.0, 40.0), prey_px=prey
 	)
 	ids = _id_blobs([mini, gantry], picked, prey, 20.0)
-	assert [b.label for b in ids] == ["ferret"]
-	assert abs(ids[0].x_px - 20.0) < 0.1
+	by_label = {b.label: b for b in ids}
+	assert set(by_label) == {"ferret", "toy"}
+	assert abs(by_label["ferret"].x_px - 20.0) < 0.1
+	assert abs(by_label["toy"].x_px - 400.0) < 0.1
 
 
 def test_ferret_far_from_encoder_is_kept() -> None:
