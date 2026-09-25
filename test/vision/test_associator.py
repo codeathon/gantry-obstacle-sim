@@ -24,6 +24,21 @@ def test_proximity_keeps_the_same_ferret() -> None:
 	assert hit is near
 
 
+def test_compact_prior_picks_mini_over_gantry() -> None:
+	# Why: default mid-band score treated the XXY carriage as the ferret.
+	assoc = ObjectAssociator(
+		VisionPriors(
+			ferret_area_px_min=80.0,
+			ferret_area_px_max=8000.0,
+			prefer_compact=True,
+			ferret_area_px_pref=1600.0,
+		)
+	)
+	gantry = Blob(80.0, 40.0, area_px=7000.0)
+	mini = Blob(20.0, 40.0, area_px=1500.0)
+	assert assoc.pick_ferret([gantry, mini]) is mini
+
+
 def test_rejects_blobs_outside_the_ferret_area_band() -> None:
 	# Why: gantry-beam leftovers sit outside the live Ace ferret area band.
 	assoc = ObjectAssociator()

@@ -147,6 +147,9 @@ function drawFlee() {
 }
 
 function drawGhost() {
+	// Why: live Ace already draws ferret_true + Ace ferret; the remapped
+	// chase ghost looked like a second/third ferret.
+	if (state.ferret_source === "ace") return;
 	const f = state.ferret_camera;
 	if (!f.valid) return;
 	const [x, y] = mmToPx(f.x_mm, f.y_mm);
@@ -185,8 +188,10 @@ function drawPrey() {
 }
 
 function drawAceIds() {
-	// Why: show Ace's ferret vs toy labels on the arena, not only chase markers.
-	const blobs = state.ace_blobs || [];
+	// Why: only the official ferret + toy — leftover CC blobs are not animals.
+	const blobs = (state.ace_blobs || []).filter(
+		(b) => b.label === "ferret" || b.label === "toy",
+	);
 	for (const b of blobs) {
 		if (b.x_mm == null || b.y_mm == null) continue;
 		const [x, y] = mmToPx(b.x_mm, b.y_mm);
@@ -326,7 +331,9 @@ function row(k, v, cls) {
 }
 
 function aceBlobRows(s) {
-	const blobs = s.ace_blobs || [];
+	const blobs = (s.ace_blobs || []).filter(
+		(b) => b.label === "ferret" || b.label === "toy",
+	);
 	if (!blobs.length) return row("Ace blobs", "none this frame");
 	return blobs.map((b) => row(
 		`Ace ${b.label}`,

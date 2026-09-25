@@ -45,6 +45,27 @@ def _select_camera(cam):
 	return SimulatedPylonCamera(cam)
 
 
+def _animal_detector(gsd: float):
+	# Why: Mini is compact; default area mid-band picked the gantry as ferret.
+	from sphero.animal import want_sphero
+	from vision.associator import ObjectAssociator, VisionPriors
+	from vision.detect import AnimalDetector
+
+	if not want_sphero():
+		return AnimalDetector(gsd_mm_per_px=gsd)
+	priors = VisionPriors(
+		ferret_area_px_min=80.0,
+		ferret_area_px_max=8000.0,
+		prefer_compact=True,
+		ferret_area_px_pref=1600.0,
+	)
+	return AnimalDetector(
+		gsd_mm_per_px=gsd,
+		min_area=80.0,
+		associator=ObjectAssociator(priors),
+	)
+
+
 class HuntSim:
 	def __init__(
 		self,
@@ -87,7 +108,9 @@ class HuntSim:
 			height_mm=height_mm,
 			period_ms=self.cfg.control_period_ms,
 			stale_ms=self.cfg.stale_frame_ms,
-			pipeline=TrackingPipeline(gsd, cam.frame_rate_fps, ground=ground),
+			pipeline=TrackingPipeline(
+			gsd, cam.frame_rate_fps, detector=_animal_detector(gsd), ground=ground
+		),
 		)
 		exp.start()
 		return exp
@@ -396,6 +419,8 @@ def _ace_blob_dicts(scene) -> list[dict]:
 	blobs = getattr(scene, "ace_blobs", None) if scene is not None else None
 	if not blobs:
 		return []
+	# Why: HUD should show one ferret + one toy, not every leftover CC blob.
+	blobs = [b for b in blobs if b.label in ("ferret", "toy")]
 	return [
 		{
 			"label": b.label,

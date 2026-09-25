@@ -164,14 +164,17 @@ def _id_blobs(
 			prey_px is not None
 			and (b.x_px - prey_px[0]) ** 2 + (b.y_px - prey_px[1]) ** 2 <= r2
 		)
-		if picked is not None and b is picked:
-			label = "ferret"
+		if _same_blob(b, picked):
+			out.append(AceBlob("ferret", b.x_px, b.y_px, area_px=b.area_px))
 		elif near or (picked is None and prey_px is not None):
-			label = "toy"
-		else:
-			label = "other"
-		out.append(AceBlob(label, b.x_px, b.y_px, area_px=b.area_px))
+			out.append(AceBlob("toy", b.x_px, b.y_px, area_px=b.area_px))
 	return out
+
+
+def _same_blob(blob: Blob, picked: Blob | None) -> bool:
+	if picked is None:
+		return False
+	return abs(blob.x_px - picked.x_px) < 0.6 and abs(blob.y_px - picked.y_px) < 0.6
 
 
 def _id_hit(

@@ -94,6 +94,18 @@ def test_lone_encoder_blob_labeled_toy() -> None:
 	assert [b.label for b in det.last_blobs] == ["toy"]
 
 
+def test_overlay_omits_third_leftover_blob() -> None:
+	# Why: a beam leftover must not draw a third Ace ferret on the HUD.
+	from vision.associator import Blob
+	from vision.detect import _id_blobs
+
+	ferret = Blob(10.0, 10.0, area_px=40.0)
+	toy = Blob(40.0, 10.0, area_px=40.0)
+	beam = Blob(80.0, 80.0, area_px=400.0)
+	ids = _id_blobs([ferret, toy, beam], ferret, (40.0, 10.0), 8.0)
+	assert sorted(b.label for b in ids) == ["ferret", "toy"]
+
+
 def test_ferret_far_from_encoder_is_kept() -> None:
 	det = _tiny_detector()
 	bg = bytearray(32 * 32)

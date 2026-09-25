@@ -19,6 +19,9 @@ class VisionPriors:
 	ferret_area_px_min: float = 200.0
 	ferret_area_px_max: float = 60000.0
 	proximity_px: float = 120.0
+	# Why: Mini is ~1–4k px; the old mid-band score preferred the XXY carriage.
+	prefer_compact: bool = False
+	ferret_area_px_pref: float = 1600.0
 
 
 class ObjectAssociator:
@@ -34,9 +37,7 @@ class ObjectAssociator:
 		for blob in blobs:
 			if not _area_ok(blob.area_px, self._p.ferret_area_px_min, self._p.ferret_area_px_max):
 				continue
-			score = 0.6 * _area_fit(
-				blob.area_px, self._p.ferret_area_px_min, self._p.ferret_area_px_max
-			) + 0.4 * _proximity(blob.x_px, blob.y_px, prior_px, self._p.proximity_px)
+			score = _score_blob(blob, self._p, prior_px)
 			if score > best_score:
 				best_score = score
 				best = blob
@@ -44,6 +45,24 @@ class ObjectAssociator:
 			return best
 		# Why: a gantry beam/shadow leftover must not become the ferret.
 		return None
+
+
+def _score_blob(blob: Blob, p: VisionPriors, prior_px) -> float:
+	prox = _proximity(blob.x_px, blob.y_px, prior_px, p.proximity_px)
+	if p.prefer_compact:
+		return 0.65 * _compact(blob.area_px, p) + 0.35 * prox
+	return 0.6 * _area_fit(
+		blob.area_px, p.ferret_area_px_min, p.ferret_area_px_max
+	) + 0.4 * prox
+
+
+def _compact(area: float, p: VisionPriors) -> float:
+	span = max(
+		abs(p.ferret_area_px_max - p.ferret_area_px_pref),
+		abs(p.ferret_area_px_pref - p.ferret_area_px_min),
+		1.0,
+	)
+	return max(0.0, 1.0 - abs(area - p.ferret_area_px_pref) / span)
 
 
 def _area_ok(area: float, lo: float, hi: float) -> bool:
