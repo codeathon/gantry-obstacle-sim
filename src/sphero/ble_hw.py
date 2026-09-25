@@ -34,9 +34,13 @@ class BleSphero:
 		except Exception:
 			return
 
-	def roll(self, speed: float, heading_deg: float) -> None:
-		# Why: Edu API is roll(heading, speed); we store speed-first in the protocol.
-		self._api.roll(int(heading_deg) % 360, int(max(0.0, min(255.0, speed))))
+	def roll(self, speed: float, heading_deg: float, duration: float = 1.0) -> None:
+		# Why: lab spherov2 requires duration; heading, speed, seconds.
+		self._api.roll(
+			int(heading_deg) % 360,
+			int(max(0.0, min(255.0, speed))),
+			float(duration),
+		)
 
 	def stop(self) -> None:
 		fn = getattr(self._api, "stop_roll", None) or getattr(self._api, "stop", None)

@@ -61,4 +61,4 @@ class SpheroRunner:
 		if cmd is None:
 			self._toy.stop()
 			return
-		self._toy.roll(cmd[0], cmd[1])
+		self._toy.roll(cmd[0], cmd[1], duration=max(self._period_s, 0.5))
