@@ -24,7 +24,10 @@ function syncHint(s) {
 	const el = document.querySelector(".hint");
 	if (!el) return;
 	if (s.ferret_source === "ace") {
-		el.textContent = "Spectator HUD. Live Ace ferret + Zaber toy run on the ace-zaber thread; this window cannot add grab or serial lag.";
+		const n = (s.ace_blobs || []).length;
+		el.textContent = n
+			? `Spectator HUD. Ace labels ${n} blob(s) on the arena (gold=ferret, teal=toy).`
+			: "Spectator HUD. Live Ace ferret + Zaber toy run on the ace-zaber thread; this window cannot add grab or serial lag.";
 	} else if (s.zaber && s.zaber.backend === "hardware") {
 		el.textContent = "Pointer is the ferret (no Ace delay). Toy is the X-MCC encoder. Start trial (S) to chase.";
 	}
@@ -84,6 +87,7 @@ function draw() {
 	drawGhost();
 	drawPrey();
 	drawFerret();
+	drawAceIds();
 }
 
 function drawGrid() {
@@ -177,6 +181,36 @@ function drawPrey() {
 	}
 	ctx.fill();
 	heading(x, y, p.direction_deg, "#7ec8c4");
+	labelAt(x, y + 20, "encoder", "#7ec8c4");
+}
+
+function drawAceIds() {
+	// Why: show Ace's ferret vs toy labels on the arena, not only chase markers.
+	const blobs = state.ace_blobs || [];
+	for (const b of blobs) {
+		if (b.x_mm == null || b.y_mm == null) continue;
+		const [x, y] = mmToPx(b.x_mm, b.y_mm);
+		const color = aceColor(b.label);
+		ctx.strokeStyle = color;
+		ctx.lineWidth = 2;
+		circle(x, y, 18);
+		labelAt(x, y, `Ace ${b.label}`, color);
+	}
+}
+
+function aceColor(label) {
+	if (label === "ferret") return "#e2b84a";
+	if (label === "toy") return "#7ec8c4";
+	return "#9aa190";
+}
+
+function labelAt(x, y, text, color) {
+	ctx.font = "12px ui-monospace, monospace";
+	ctx.lineWidth = 3;
+	ctx.strokeStyle = "#0d0f0c";
+	ctx.strokeText(text, x + 14, y - 12);
+	ctx.fillStyle = color;
+	ctx.fillText(text, x + 14, y - 12);
 }
 
 function blob(x, y, r) {
@@ -263,6 +297,7 @@ function hudAnimals(s) {
 		${row("Ace confidence", (sc.ferret_confidence || 0).toFixed(2), sc.ferret_confidence >= 0.5 ? "ok" : "")}
 		${row("camera px→mm", fmtTrack(s.ferret_camera))}
 		${row("camera px", s.ferret_camera.valid ? `${s.ferret_camera.x_px.toFixed(0)}, ${s.ferret_camera.y_px.toFixed(0)} px` : "not seen")}
+		${aceBlobRows(s)}
 		<h2>Toy (Zaber encoder)</h2>
 		${row("state", fmtTrack(s.prey))}
 		${row("gap", sc.distance_mm.toFixed(0) + " mm")}
@@ -288,6 +323,16 @@ function hudDecision(s) {
 
 function row(k, v, cls) {
 	return `<div class="row"><span class="k">${k}</span><span class="v ${cls || ""}">${v}</span></div>`;
+}
+
+function aceBlobRows(s) {
+	const blobs = s.ace_blobs || [];
+	if (!blobs.length) return row("Ace blobs", "none this frame");
+	return blobs.map((b) => row(
+		`Ace ${b.label}`,
+		`${(b.x_mm || 0).toFixed(0)}, ${(b.y_mm || 0).toFixed(0)} mm · ${(b.x_px || 0).toFixed(0)}, ${(b.y_px || 0).toFixed(0)} px`,
+		b.label === "ferret" ? "ok" : "",
+	)).join("");
 }
 
 function fmtTrack(t) {

@@ -170,6 +170,7 @@ class HuntSim:
 			"scene": _scene_dict(frame, self.last_frame_index),
 			"control_hz": 1000.0 / self.cfg.control_period_ms,
 			"policy": self._policy_dict(),
+			"ace_blobs": _ace_blob_dicts(self.exp.last_scene),
 		}
 
 	def _camera_dict(self, cam) -> dict:
@@ -388,6 +389,24 @@ def _track_dict(t: TrackState) -> dict:
 		"direction_deg": t.direction_deg,
 		"valid": t.valid,
 	}
+
+
+def _ace_blob_dicts(scene) -> list[dict]:
+	# Why: last_scene is FOV mm; chase._latest ferret is rail mm.
+	blobs = getattr(scene, "ace_blobs", None) if scene is not None else None
+	if not blobs:
+		return []
+	return [
+		{
+			"label": b.label,
+			"x_mm": b.x_mm,
+			"y_mm": b.y_mm,
+			"x_px": b.x_px,
+			"y_px": b.y_px,
+			"area_px": b.area_px,
+		}
+		for b in blobs
+	]
 
 
 def _ground_for_camera(camera) -> GroundCam | None:

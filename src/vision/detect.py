@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from basler.types import CameraFrame
 from vision.associator import Blob, ObjectAssociator, VisionPriors
+from vision.tracking_frame import AceBlob
 
 
 class AnimalDetector:
@@ -29,6 +30,8 @@ class AnimalDetector:
 		self._associator = associator or ObjectAssociator(
 			VisionPriors(ferret_area_px_min=min_area)
 		)
+		# Why: HUD overlays every Ace blob, including the dropped toy.
+		self.last_blobs: list[AceBlob] = []
 
 	def update(
 		self,
@@ -43,6 +46,7 @@ class AnimalDetector:
 		self._n += 1
 		img = _mono8(frame)
 		if self._n <= self._warmup:
+			self.last_blobs = []
 			self._learn(frame, img, 0.01)
 			return None
 		if prey_px is None and prey_xy_mm is not None:
@@ -64,11 +68,13 @@ class AnimalDetector:
 		self, frame: CameraFrame, img, prey_px: tuple[float, float] | None
 	) -> tuple[float, float] | None:
 		if img is not None:
-			return _numpy_ferret(
+			hit, ids = _numpy_ferret(
 				img, self._bg, prey_px, self._exclude_px, self._min_area,
 				self._associator, self._prior_px,
 			)
-		return _bytes_centroid(
+			self.last_blobs = ids
+			return hit
+		hit = _bytes_centroid(
 			bytes(frame.pixels),
 			frame.width_px,
 			frame.height_px,
@@ -77,6 +83,8 @@ class AnimalDetector:
 			self._exclude_px,
 			int(self._min_area),
 		)
+		self.last_blobs = _id_hit(hit, prey_px)
+		return hit
 
 
 def _mono8(frame: CameraFrame):
@@ -108,16 +116,17 @@ def _numpy_ferret(img, bg, prey_px, exclude_px: float, min_area: float, associat
 	import numpy as np
 
 	if bg is None:
-		return None
+		return None, []
 	bg_f = bg if getattr(bg, "dtype", None) is not None else np.asarray(bg, dtype=np.float32)
 	mask = np.abs(img.astype(np.float32) - bg_f) > 20.0
-	blobs = _numpy_blobs(mask, min_area)
+	raw = _numpy_blobs(mask, min_area)
 	# Why: one FOV blob with the encoder in-frame is the toy, not a ferret.
-	blobs = _drop_toy(blobs, prey_px, img.shape[1], img.shape[0], exclude_px)
-	picked = associator.pick_ferret(blobs, prior_px)
+	kept = _drop_toy(raw, prey_px, img.shape[1], img.shape[0], exclude_px)
+	picked = associator.pick_ferret(kept, prior_px)
+	ids = _id_blobs(raw, picked, prey_px, exclude_px)
 	if picked is None:
-		return None
-	return picked.x_px, picked.y_px
+		return None, ids
+	return (picked.x_px, picked.y_px), ids
 
 
 def _drop_toy(
@@ -139,6 +148,39 @@ def _drop_toy(
 		b for b in blobs
 		if (b.x_px - prey_px[0]) ** 2 + (b.y_px - prey_px[1]) ** 2 > r2
 	]
+
+
+def _id_blobs(
+	raw: list[Blob],
+	picked: Blob | None,
+	prey_px: tuple[float, float] | None,
+	exclude_px: float,
+) -> list[AceBlob]:
+	# Why: overlay must show the dropped toy as well as the chase ferret.
+	r2 = exclude_px * exclude_px
+	out: list[AceBlob] = []
+	for b in raw:
+		near = (
+			prey_px is not None
+			and (b.x_px - prey_px[0]) ** 2 + (b.y_px - prey_px[1]) ** 2 <= r2
+		)
+		if picked is not None and b is picked:
+			label = "ferret"
+		elif near or (picked is None and prey_px is not None):
+			label = "toy"
+		else:
+			label = "other"
+		out.append(AceBlob(label, b.x_px, b.y_px, area_px=b.area_px))
+	return out
+
+
+def _id_hit(
+	hit: tuple[float, float] | None, prey_px: tuple[float, float] | None
+) -> list[AceBlob]:
+	if hit is None:
+		return []
+	del prey_px
+	return [AceBlob("ferret", hit[0], hit[1])]
 
 
 def _numpy_blobs(mask, min_area: float, max_span_px: float = 600.0) -> list[Blob]:

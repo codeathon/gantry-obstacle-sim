@@ -16,6 +16,17 @@ class TrialPhase(str, Enum):
 
 
 @dataclass
+class AceBlob:
+	# Why: HUD overlay shows what Ace labeled, not only the chase ferret.
+	label: str
+	x_px: float
+	y_px: float
+	x_mm: float = 0.0
+	y_mm: float = 0.0
+	area_px: float = 0.0
+
+
+@dataclass
 class TrackState:
 	x_mm: float = 0.0
 	y_mm: float = 0.0
@@ -46,6 +57,7 @@ class TrackingFrame:
 	bearing_deg: float = 0.0
 	closing_speed_mm_s: float = 0.0
 	trial_phase: TrialPhase = TrialPhase.warmup
+	ace_blobs: list[AceBlob] = field(default_factory=list)
 
 	def both_valid(self) -> bool:
 		return self.ferret.valid and self.prey.valid

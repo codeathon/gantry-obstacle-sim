@@ -145,6 +145,7 @@ def test_live_ace_blob_drives_ferret_not_pointer() -> None:
 	assert abs(seen.x_mm - 400.0) > 50.0
 	assert sim.snapshot()["ferret_source"] == "ace"
 	assert any(c.name == "move_velocity" for c in sim.gantry.calls)
+	assert any(b["label"] == "ferret" for b in sim.snapshot().get("ace_blobs") or [])
 
 
 def test_hardware_pointer_skips_ace_delay() -> None:
