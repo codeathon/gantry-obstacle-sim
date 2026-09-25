@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import time
 
+from basler.camera import AceCamera
 from basler.types import CameraFrame
 from chase.config import ChasePolicyConfig
 from experiment.orchestrator import Experiment
 from vision.detect import AnimalDetector
 from vision.pipeline import TrackingPipeline
+from vision.tracking_frame import TrackState
 from zaber.client import ZaberGantry
 
 
@@ -128,6 +130,26 @@ def test_mouse_blob_drives_gantry_velocity() -> None:
 	assert "move_velocity" in gantry.calls
 	assert exp.chase.last_decision.enable_motion
 	assert exp.chase.last_decision.target_vx_mm_s > 0
+
+
+def test_missed_ace_grab_does_not_stale_stop() -> None:
+	# Why: Ace timeout=0 empty retrieves used to stale-stop the toy in 80 ms.
+	gantry = ZaberGantry()
+	exp = Experiment(
+		gantry, AceCamera(), cfg=_keepaway(), period_ms=0, stale_ms=80.0
+	)
+	exp.start()
+	exp.on_operator_key("s")
+	gantry.move_absolute(200.0, 0.0)
+	exp.feed_ferret_mm(TrackState(0.0, 0.0, valid=True), t_s=time.time())
+	exp._grabber.retrieve_frame = lambda: None
+	time.sleep(0.12)
+	exp.chase_feed_loop()
+	reason = exp.chase.last_decision.reason
+	moving = exp.chase.last_decision.enable_motion
+	exp.shutdown()
+	assert reason != "stale_frame"
+	assert moving
 
 
 class _Rail:

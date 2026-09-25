@@ -7,7 +7,7 @@ import math
 from basler.types import CameraFrame
 from vision.detect import AnimalDetector
 from vision.ground_calib import GroundCam, arena_to_px, px_to_arena
-from vision.tracking_frame import TrackingFrame, TrackingQuality, TrackState, TrialPhase
+from vision.tracking_frame import AceBlob, TrackingFrame, TrackingQuality, TrackState, TrialPhase
 
 
 class TrackingPipeline:
@@ -50,6 +50,7 @@ class TrackingPipeline:
 			ferret=ferret,
 			quality=quality,
 			trial_phase=trial,
+			ace_blobs=self._ace_blobs_mm(ferret),
 		)
 
 	def _ferret_from_camera(
@@ -94,6 +95,18 @@ class TrackingPipeline:
 			x_px=x_px,
 			y_px=y_px,
 		)
+
+	def _ace_blobs_mm(self, ferret: TrackState) -> list[AceBlob]:
+		# Why: pointer stamps have no detector list; still tag the Ace ferret.
+		raw = list(getattr(self._detector, "last_blobs", []))
+		out = [self._blob_mm(b) for b in raw]
+		if out or not ferret.valid:
+			return out
+		return [AceBlob("ferret", ferret.x_px, ferret.y_px, ferret.x_mm, ferret.y_mm)]
+
+	def _blob_mm(self, blob: AceBlob) -> AceBlob:
+		x_mm, y_mm = self._px_to_mm(blob.x_px, blob.y_px)
+		return AceBlob(blob.label, blob.x_px, blob.y_px, x_mm, y_mm, blob.area_px)
 
 	def _px_to_mm(self, x_px: float, y_px: float) -> tuple[float, float]:
 		if self._ground is None:

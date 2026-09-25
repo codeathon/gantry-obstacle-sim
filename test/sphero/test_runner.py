@@ -30,6 +30,27 @@ def test_offer_rolls_on_seek_thread() -> None:
 	assert abs(heading - 0.0) < 1.0
 
 
+def test_factory_opens_on_seek_thread() -> None:
+	# Why: Bleak asyncio.run() must not run on uvicorn's loop.
+	import threading
+
+	seen: list[str] = []
+
+	def factory():
+		seen.append(threading.current_thread().name)
+		toy = SpheroStub()
+		toy.connect()
+		return toy
+
+	runner = SpheroRunner(factory=factory, period_s=0.01)
+	runner.start()
+	deadline = time.perf_counter() + 0.5
+	while not seen and time.perf_counter() < deadline:
+		time.sleep(0.005)
+	runner.stop()
+	assert seen == ["sphero-seek"]
+
+
 def test_invalid_ferret_stops() -> None:
 	toy = SpheroStub()
 	runner = SpheroRunner(toy, period_s=0.01)

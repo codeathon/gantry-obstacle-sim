@@ -79,16 +79,20 @@ def _engage(
 		return out
 	out.enable_motion = True
 	ax, ay, reason = _engage_accel(scene, cfg, box, out)
-	out.reason = reason
 	# Why: convert soft accel (mm/s² scale) to a capped velocity command for Zaber.
-	vx = ax * cfg.velocity_gain_s
-	vy = ay * cfg.velocity_gain_s
+	vx, vy = _hold_ring_vel(
+		ax * cfg.velocity_gain_s, ay * cfg.velocity_gain_s, scene, cfg, box
+	)
+	vx, vy, lure = _lure_prey(vx, vy, scene, cfg, box)
+	if lure:
+		reason = lure
 	spd = math.hypot(vx, vy)
 	cap = cfg.max_engage_speed_mm_s
 	if spd > cap and spd > 1e-6:
 		s = cap / spd
 		vx *= s
 		vy *= s
+	out.reason = reason
 	out.target_vx_mm_s = vx
 	out.target_vy_mm_s = vy
 	out.flee_direction_deg = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
@@ -111,16 +115,57 @@ def _engage_accel(
 	out.wall_push = wall
 	out.approach_threat = _clamp01(max(0.0, scene.closing_speed_mm_s) / 800.0)
 	out.cone_threat = wall
-	if wall > 0.35:
+	if dist > cfg.preferred_gap_mm:
+		# Why: edge dodge used to cancel reel-in and park the toy outside the ring.
+		wx, wy = _wall_along_reel(wx, wy, -ux, -uy)
+		tag = "reel_in"
+	elif wall > 0.35:
 		tag = "edge_dodge"
 	elif dist < cfg.min_gap_mm:
 		tag = "press"
 	return rx + tx * lateral + wx, ry + ty * lateral + wy, tag
 
 
+def _hold_ring_vel(
+	vx: float,
+	vy: float,
+	scene: TrackingFrame,
+	cfg: ChasePolicyConfig,
+	box: ArenaBounds,
+) -> tuple[float, float]:
+	# Why: if the toy sits outside the keep-away circle, walk it back so the
+	# ferret (or Mini) always has something to chase. Aim at the rail-clamped
+	# ferret so an off-travel blob cannot pin +x into a wall.
+	fx = min(max(scene.ferret.x_mm, box.x_min), box.x_max)
+	fy = min(max(scene.ferret.y_mm, box.y_min), box.y_max)
+	tx, ty, dist = _norm(fx - scene.prey.x_mm, fy - scene.prey.y_mm)
+	if dist <= cfg.preferred_gap_mm:
+		return vx, vy
+	# Why: Mini lure must not slam 240 mm/s into the ring; BLE cannot follow.
+	if float(getattr(cfg, "lure_speed_mm_s", 0.0) or 0.0) > 0:
+		return vx, vy
+	floor = min(cfg.max_engage_speed_mm_s * 0.5, 240.0)
+	spd = math.hypot(vx, vy)
+	if spd >= floor and vx * tx + vy * ty >= 0.0:
+		return vx, vy
+	use = max(spd, floor)
+	return tx * use, ty * use
+
+
+def _wall_along_reel(wx: float, wy: float, tx: float, ty: float) -> tuple[float, float]:
+	# Why: keep wall slide, but never reverse the walk back toward the ferret.
+	opp = wx * tx + wy * ty
+	if opp < 0.0:
+		wx -= tx * opp
+		wy -= ty * opp
+	return wx, wy
+
+
 def _prey_away_unit(
 	px: float, py: float, fx: float, fy: float, box: ArenaBounds
 ) -> tuple[float, float, float]:
+	fx = min(max(fx, box.x_min), box.x_max)
+	fy = min(max(fy, box.y_min), box.y_max)
 	ux, uy, dist = _norm(px - fx, py - fy)
 	if dist >= 1e-3:
 		return ux, uy, dist
@@ -139,7 +184,8 @@ def _gap_radial(
 		out.dist_threat = _clamp01(gap_err / max(cfg.preferred_gap_mm - cfg.min_gap_mm, 1.0))
 		return ux * gap_err * cfg.away_gain, uy * gap_err * cfg.away_gain, "nudge_away"
 	out.dist_threat = 0.0
-	pull = min(-gap_err, cfg.max_pull_mm)
+	# Why: a tiny gap error looked parked on the short X-MCC; floor the pull.
+	pull = max(min(-gap_err, cfg.max_pull_mm), cfg.preferred_gap_mm * 0.35)
 	return -ux * pull * cfg.toward_gain, -uy * pull * cfg.toward_gain, "reel_in"
 
 
@@ -185,3 +231,38 @@ def _wall_push(
 		py += cy * corner * cfg.corner_gain
 	strength = max(left, right, top, bottom)
 	return px, py, strength
+
+
+def _lure_prey(
+	vx: float,
+	vy: float,
+	scene: TrackingFrame,
+	cfg: ChasePolicyConfig,
+	box: ArenaBounds,
+) -> tuple[float, float, str | None]:
+	# Why: Mini rolls on a slow GATT loop; the X-MCC used to enter and leave
+	# the ring before SM-6399 could start following.
+	cap = float(getattr(cfg, "lure_speed_mm_s", 0.0) or 0.0)
+	if cap <= 0.0:
+		return vx, vy, None
+	fx = min(max(scene.ferret.x_mm, box.x_min), box.x_max)
+	fy = min(max(scene.ferret.y_mm, box.y_min), box.y_max)
+	tx, ty, dist = _norm(fx - scene.prey.x_mm, fy - scene.prey.y_mm)
+	if dist > cfg.preferred_gap_mm:
+		return tx * min(cap, 80.0), ty * min(cap, 80.0), "reel_in"
+	if dist < cfg.min_gap_mm:
+		# Why: Ace merges the two blobs; holding here deadlocks the hunt.
+		return -tx * min(cap, 70.0), -ty * min(cap, 70.0), "lead_away"
+	if not _hunter_following(scene):
+		if dist > cfg.min_gap_mm + 20.0:
+			creep = min(40.0, cap * 0.5)
+			return tx * creep, ty * creep, "wait_hunter"
+		return 0.0, 0.0, "wait_hunter"
+	return -tx * min(cap, 70.0), -ty * min(cap, 70.0), "lead_away"
+
+
+def _hunter_following(scene: TrackingFrame) -> bool:
+	# Why: Ace speed on the Mini blob is the cue that BLE roll actually started.
+	if scene.closing_speed_mm_s > 25.0:
+		return True
+	return scene.ferret.speed_mm_s > 40.0 and scene.closing_speed_mm_s > 5.0

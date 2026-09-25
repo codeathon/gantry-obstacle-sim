@@ -135,6 +135,7 @@ def _chase_policy(ch: dict) -> ChasePolicyConfig:
 		cone_half_angle_deg=float(ch.get("cone_half_angle_deg", 45.0)),
 		threat_distance_mm=float(ch.get("threat_distance_mm", pref)),
 		creep_distance_mm=float(ch.get("creep_distance_mm", pref * 2)),
+		lure_speed_mm_s=float(ch.get("lure_speed_mm_s", 0.0)),
 	)
 
 

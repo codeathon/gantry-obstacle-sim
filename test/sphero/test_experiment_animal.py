@@ -22,6 +22,67 @@ def test_ferret_mode_does_not_connect_sphero(monkeypatch) -> None:
 	assert exp.sphero_status() == {"animal": "ferret", "backend": "off"}
 
 
+def test_sphero_factory_opens_off_start_thread(monkeypatch) -> None:
+	# Why: HuntSim starts on uvicorn; find_toy must not use that loop.
+	import threading
+
+	seen: list[str] = []
+
+	def factory():
+		seen.append(threading.current_thread().name)
+		toy = SpheroStub()
+		toy.connect()
+		return toy
+
+	monkeypatch.setenv("PREY_ANIMAL", "sphero")
+	monkeypatch.setattr("sphero.factory.open_sphero", factory)
+	exp = Experiment(ZaberGantry(), AceCamera())
+	exp.start()
+	deadline = time.perf_counter() + 0.5
+	while not seen and time.perf_counter() < deadline:
+		time.sleep(0.005)
+	exp.shutdown()
+	assert seen == ["sphero-seek"]
+
+
+def test_sphero_uses_gantry_travel_box(monkeypatch) -> None:
+	# Why: Mini must share the mapped rail window or it pins on the enclosure.
+	from simulation.config import load_sim_config
+
+	monkeypatch.setenv("PREY_ANIMAL", "sphero")
+	exp = Experiment(
+		ZaberGantry(), AceCamera(), cfg=load_sim_config().chase, sphero=SpheroStub()
+	)
+	exp.start()
+	box = exp._sphero_runner._bounds
+	margin = exp._sphero_runner._wall_margin_mm
+	fov_w, fov_h = exp._fov_w, exp._fov_h
+	exp.shutdown()
+	assert box is not None
+	assert box.x_min == 0.0
+	assert box.y_min == 0.0
+	assert box.x_max == fov_w
+	assert box.y_max == fov_h
+	assert margin > 0.0
+
+
+def test_sphero_mode_enables_mini_lure(monkeypatch) -> None:
+	from simulation.config import load_sim_config
+
+	monkeypatch.setenv("PREY_ANIMAL", "sphero")
+	exp = Experiment(
+		ZaberGantry(), AceCamera(), cfg=load_sim_config().chase, sphero=SpheroStub()
+	)
+	exp.start()
+	lure = exp.chase._cfg.lure_speed_mm_s
+	min_gap = exp.chase._cfg.min_gap_mm
+	arrive = exp._sphero_runner._arrive_mm
+	exp.shutdown()
+	assert lure == 80.0
+	assert min_gap >= 250.0
+	assert arrive >= 250.0
+
+
 def test_sphero_mode_offers_scene(monkeypatch) -> None:
 	monkeypatch.setenv("PREY_ANIMAL", "sphero")
 	toy = SpheroStub()

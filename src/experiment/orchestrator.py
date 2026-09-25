@@ -75,6 +75,10 @@ class Experiment:
 		delivered = self._ingest_camera(cam_frame)
 		# Why: encoder is live; refresh toy XY even when the Ace has no new frame.
 		if self.last_scene is not None:
+			if cam_frame is None:
+				# Why: timeout=0 empty retrieves are not a dead camera; 80 ms
+				# stale-stop used to freeze the toy between Ace frames.
+				self.last_scene.host_time_ns = time.time_ns()
 			self._stamp_encoder_prey(self.last_scene, arena=True)
 			self._submit_chase(self.last_scene)
 			self._offer_animal(self.last_scene)
@@ -129,10 +133,52 @@ class Experiment:
 
 		if not want_sphero():
 			return
-		if self._sphero is None:
-			self._sphero = open_sphero()
-		self._sphero_runner = SpheroRunner(self._sphero)
+		self._enable_mini_lure()
+		# Why: uvicorn already has an event loop; Bleak asyncio.run() must not run here.
+		if self._sphero is not None:
+			self._sphero_runner = SpheroRunner(self._sphero)
+		else:
+			self._sphero_runner = SpheroRunner(factory=open_sphero)
+		# Why: Mini rolls free; pin it to the same mapped travel the gantry uses.
+		self._apply_mini_travel()
 		self._sphero_runner.start()
+
+	def _apply_mini_travel(self) -> None:
+		if self._sphero_runner is None:
+			return
+		from chase.bounds import ArenaBounds, fit_chase_policy
+		from chase.config import ChasePolicyConfig
+
+		# Mapped gantry travel is the FOV rectangle Mini already lives in.
+		box = ArenaBounds(0.0, self._fov_w, 0.0, self._fov_h)
+		src = self.chase._cfg_src
+		if isinstance(src, ChasePolicyConfig):
+			fitted = fit_chase_policy(src, box)
+			margin = fitted.wall_margin_mm
+			arrive = fitted.min_gap_mm if fitted.ace_sep_mm > 0.0 else 40.0
+		else:
+			margin = min(280.0, min(box.width_mm, box.height_mm) * 0.18)
+			arrive = 40.0
+		self._sphero_runner.set_travel(box, margin, arrive_mm=arrive)
+
+	def _enable_mini_lure(self) -> None:
+		# Why: Mini GATT cannot follow a 480 mm/s keep-away; wait in the ring.
+		from dataclasses import replace
+
+		from chase.config import ACE_SEP_MM, ChasePolicyConfig
+
+		cfg = self.chase._cfg_src
+		if not isinstance(cfg, ChasePolicyConfig):
+			return
+		# Why: Ace cannot split Mini and carriage closer than ACE_SEP_MM.
+		self.chase._cfg_src = replace(
+			cfg,
+			lure_speed_mm_s=80.0,
+			ace_sep_mm=ACE_SEP_MM,
+			min_gap_mm=max(cfg.min_gap_mm, ACE_SEP_MM),
+			preferred_gap_mm=max(cfg.preferred_gap_mm, ACE_SEP_MM + 80.0),
+		)
+		self.chase._refit()
 
 	def _stop_animal(self) -> None:
 		if self._sphero_runner is not None:
@@ -149,8 +195,11 @@ class Experiment:
 		from sphero.animal import animal_name
 
 		backend = "off"
-		if self._sphero is not None:
-			backend = str(getattr(self._sphero, "backend", "stub"))
+		toy = self._sphero
+		if self._sphero_runner is not None:
+			toy = getattr(self._sphero_runner, "_toy", None) or toy
+		if toy is not None:
+			backend = str(getattr(toy, "backend", "stub"))
 		return {"animal": animal_name(), "backend": backend}
 
 	def _ingest_camera(self, cam_frame) -> TrackingFrame | None:

@@ -45,6 +45,27 @@ def _select_camera(cam):
 	return SimulatedPylonCamera(cam)
 
 
+def _animal_detector(gsd: float):
+	# Why: Mini and carriage match in area; encoder-nearest is the toy.
+	from sphero.animal import want_sphero
+	from vision.associator import ObjectAssociator, VisionPriors
+	from vision.detect import AnimalDetector
+
+	if not want_sphero():
+		return AnimalDetector(gsd_mm_per_px=gsd)
+	priors = VisionPriors(
+		ferret_area_px_min=80.0,
+		ferret_area_px_max=8000.0,
+		prefer_compact=True,
+		ferret_area_px_pref=1600.0,
+	)
+	return AnimalDetector(
+		gsd_mm_per_px=gsd,
+		min_area=80.0,
+		associator=ObjectAssociator(priors),
+	)
+
+
 class HuntSim:
 	def __init__(
 		self,
@@ -87,7 +108,9 @@ class HuntSim:
 			height_mm=height_mm,
 			period_ms=self.cfg.control_period_ms,
 			stale_ms=self.cfg.stale_frame_ms,
-			pipeline=TrackingPipeline(gsd, cam.frame_rate_fps, ground=ground),
+			pipeline=TrackingPipeline(
+			gsd, cam.frame_rate_fps, detector=_animal_detector(gsd), ground=ground
+		),
 		)
 		exp.start()
 		return exp
@@ -170,6 +193,7 @@ class HuntSim:
 			"scene": _scene_dict(frame, self.last_frame_index),
 			"control_hz": 1000.0 / self.cfg.control_period_ms,
 			"policy": self._policy_dict(),
+			"ace_blobs": _ace_blob_dicts(self.exp.last_scene),
 		}
 
 	def _camera_dict(self, cam) -> dict:
@@ -256,13 +280,13 @@ class HuntSim:
 
 	def _travel_dict(self) -> dict:
 		# Why: HUD box is the mapped window (full FOV); enc_* is firmware travel.
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
 		return {
 			"x_min": 0.0,
-			"x_max": cam.width_mm,
+			"x_max": fov_w,
 			"y_min": 0.0,
-			"y_max": cam.height_mm,
+			"y_max": fov_h,
 			"enc_x_min": box.x_min,
 			"enc_x_max": box.x_max,
 			"enc_y_min": box.y_min,
@@ -306,28 +330,33 @@ class HuntSim:
 		heading = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
 		return TrackState(x, y, spd, heading, True)
 
+	def _arena_mm(self) -> tuple[float, float]:
+		# Why: Charuco/Ace FOV is the canvas; sim.json a2A1920 1987×1242
+		# stretched the toy past the window when serial 24676894 is live.
+		return float(self.exp._fov_w), float(self.exp._fov_h)
+
 	def _encoder_to_arena(
 		self, x: float, y: float, vx: float, vy: float
 	) -> tuple[float, float, float, float]:
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
-		ax, ay = gantry_to_arena(x, y, box, cam.width_mm, cam.height_mm)
-		avx, avy = scale_vel(vx, vy, box, cam.width_mm, cam.height_mm, to_arena=True)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
+		ax, ay = gantry_to_arena(x, y, box, fov_w, fov_h)
+		avx, avy = scale_vel(vx, vy, box, fov_w, fov_h, to_arena=True)
 		return ax, ay, avx, avy
 
 	def _to_arena_track(self, t: TrackState) -> TrackState:
 		if not t.valid:
 			return t
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
-		x, y = gantry_to_arena(t.x_mm, t.y_mm, box, cam.width_mm, cam.height_mm)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
+		x, y = gantry_to_arena(t.x_mm, t.y_mm, box, fov_w, fov_h)
 		return TrackState(x, y, t.speed_mm_s, t.direction_deg, True, t.x_px, t.y_px)
 
 	def _policy_dict(self) -> dict:
 		pol = asdict(self.controller._cfg or self.cfg.chase)
-		cam = self.cfg.camera
-		box = travel_box(self.gantry, cam.width_mm, cam.height_mm)
-		s = 0.5 * (cam.width_mm / box.width_mm + cam.height_mm / box.height_mm)
+		fov_w, fov_h = self._arena_mm()
+		box = travel_box(self.gantry, fov_w, fov_h)
+		s = 0.5 * (fov_w / box.width_mm + fov_h / box.height_mm)
 		if s <= 1.01:
 			return pol
 		# Why: rings are drawn in FOV mm; chase gaps stay in rail mm.
@@ -383,6 +412,26 @@ def _track_dict(t: TrackState) -> dict:
 		"direction_deg": t.direction_deg,
 		"valid": t.valid,
 	}
+
+
+def _ace_blob_dicts(scene) -> list[dict]:
+	# Why: last_scene is FOV mm; chase._latest ferret is rail mm.
+	blobs = getattr(scene, "ace_blobs", None) if scene is not None else None
+	if not blobs:
+		return []
+	# Why: HUD should show one ferret + one toy, not every leftover CC blob.
+	blobs = [b for b in blobs if b.label in ("ferret", "toy")]
+	return [
+		{
+			"label": b.label,
+			"x_mm": b.x_mm,
+			"y_mm": b.y_mm,
+			"x_px": b.x_px,
+			"y_px": b.y_px,
+			"area_px": b.area_px,
+		}
+		for b in blobs
+	]
 
 
 def _ground_for_camera(camera) -> GroundCam | None:

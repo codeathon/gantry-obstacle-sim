@@ -145,6 +145,7 @@ def test_live_ace_blob_drives_ferret_not_pointer() -> None:
 	assert abs(seen.x_mm - 400.0) > 50.0
 	assert sim.snapshot()["ferret_source"] == "ace"
 	assert any(c.name == "move_velocity" for c in sim.gantry.calls)
+	assert any(b["label"] == "ferret" for b in sim.snapshot().get("ace_blobs") or [])
 
 
 def test_hardware_pointer_skips_ace_delay() -> None:
@@ -232,6 +233,38 @@ def test_ace_ferret_and_encoder_toy_share_arena() -> None:
 	assert abs(snap["prey"]["x_mm"] - ax) < 1e-6
 	assert abs(snap["prey"]["y_mm"] - ay) < 1e-6
 	assert "move_velocity" in sim.gantry.calls
+
+
+def test_charuco_fov_keeps_mapped_toy_on_canvas() -> None:
+	# Why: HUD used 1987×1242 while Charuco FOV is ~1141×937, so mid-travel
+	# still sat on-canvas but +X travel (and the teal rail box) ran off-window.
+	g = ZaberGantry(
+		HardwareSettings(
+			home_x_mm=404.3,
+			home_y_mm=439.45,
+			x_min=70.3,
+			x_max=738.3,
+			y_min=70.3,
+			y_max=808.6,
+			poll_min_s=0.0,
+		),
+		x_axis=_HwAxis(404.3),
+		y_axis=_HwAxis(439.45),
+	)
+	grabber = _LiveGrabber(_ace_frames())
+	grabber.serial = "24676894"
+	sim = HuntSim(grabber=grabber, gantry=g)
+	snap = sim.snapshot()
+	arena_w = snap["arena"]["width_mm"]
+	arena_h = snap["arena"]["height_mm"]
+	assert 1100.0 < arena_w < 1200.0
+	assert snap["zaber"]["x_max"] == arena_w
+	assert snap["zaber"]["y_max"] == arena_h
+	assert 0.0 <= snap["prey"]["x_mm"] <= arena_w
+	assert 0.0 <= snap["prey"]["y_mm"] <= arena_h
+	assert abs(snap["prey"]["x_mm"] - arena_w * 0.5) < 2.0
+	assert abs(snap["prey"]["y_mm"] - arena_h * 0.5) < 2.0
+	assert snap["prey"]["x_mm"] < sim.cfg.camera.width_mm * 0.6
 
 
 def test_set_pointer_marks_hud_dirty() -> None:

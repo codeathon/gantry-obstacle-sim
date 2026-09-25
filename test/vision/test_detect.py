@@ -70,6 +70,91 @@ def test_lone_blob_in_frame_with_encoder_is_toy() -> None:
 	assert det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0)) is None
 
 
+def test_two_blobs_labeled_ferret_and_toy() -> None:
+	# Why: HUD overlay needs Ace IDs, not only the chase ferret centroid.
+	det = _tiny_detector()
+	bg = bytearray(32 * 32)
+	det.update(_frame(32, 32, bg, idx=1))
+	img = bytearray(32 * 32)
+	_paint(img, 32, 4, 14, 9, 19)
+	_paint(img, 32, 18, 14, 23, 19)
+	xy = det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0))
+	assert xy is not None
+	labels = sorted(b.label for b in det.last_blobs)
+	assert labels == ["ferret", "toy"]
+
+
+def test_lone_encoder_blob_labeled_toy() -> None:
+	det = _tiny_detector()
+	bg = bytearray(32 * 32)
+	det.update(_frame(32, 32, bg, idx=1))
+	img = bytearray(32 * 32)
+	_paint(img, 32, 4, 14, 9, 19)
+	assert det.update(_frame(32, 32, img, idx=2), prey_xy_mm=(20.0, 16.0)) is None
+	assert [b.label for b in det.last_blobs] == ["toy"]
+
+
+def test_overlay_omits_third_leftover_blob() -> None:
+	# Why: a beam leftover must not draw a third Ace ferret on the HUD.
+	from vision.associator import Blob
+	from vision.detect import _id_blobs
+
+	ferret = Blob(10.0, 10.0, area_px=40.0)
+	toy = Blob(40.0, 10.0, area_px=40.0)
+	beam = Blob(80.0, 80.0, area_px=400.0)
+	ids = _id_blobs([ferret, toy, beam], ferret, (40.0, 10.0), 8.0)
+	assert sorted(b.label for b in ids) == ["ferret", "toy"]
+
+
+def test_same_size_numpy_encoder_keeps_mini() -> None:
+	# Why: Mini and carriage match in area; encoder-nearest must stay the toy.
+	import numpy as np
+	from vision.associator import ObjectAssociator, VisionPriors
+	from vision.detect import _numpy_ferret
+
+	assoc = ObjectAssociator(
+		VisionPriors(
+			ferret_area_px_min=4.0,
+			ferret_area_px_max=200.0,
+			prefer_compact=True,
+			ferret_area_px_pref=25.0,
+		)
+	)
+	bg = np.zeros((32, 32), dtype=np.float32)
+	img = np.zeros((32, 32), dtype=np.uint8)
+	img[14:19, 4:9] = 255
+	img[14:19, 20:25] = 255
+	hit, ids = _numpy_ferret(img, bg, (22.0, 16.0), 8.0, 4.0, assoc, (22.0, 16.0))
+	assert hit is not None
+	assert abs(hit[0] - 6.0) < 2.0
+	ferret = next(b for b in ids if b.label == "ferret")
+	assert abs(ferret.x_px - 6.0) < 2.0
+
+
+def test_overlay_same_size_gold_on_mini() -> None:
+	# Why: gold Ace ferret must sit on the Mini, not the same-area carriage.
+	from vision.associator import Blob, ObjectAssociator, VisionPriors
+	from vision.detect import _id_blobs
+
+	priors = VisionPriors(
+		ferret_area_px_min=80.0,
+		ferret_area_px_max=8000.0,
+		prefer_compact=True,
+		ferret_area_px_pref=1600.0,
+	)
+	mini = Blob(20.0, 40.0, area_px=1600.0)
+	gantry = Blob(400.0, 40.0, area_px=1600.0)
+	prey = (400.0, 40.0)
+	picked = ObjectAssociator(priors).pick_ferret(
+		[mini, gantry], prior_px=(400.0, 40.0), prey_px=prey
+	)
+	ids = _id_blobs([mini, gantry], picked, prey, 20.0)
+	by_label = {b.label: b for b in ids}
+	assert set(by_label) == {"ferret", "toy"}
+	assert abs(by_label["ferret"].x_px - 20.0) < 0.1
+	assert abs(by_label["toy"].x_px - 400.0) < 0.1
+
+
 def test_ferret_far_from_encoder_is_kept() -> None:
 	det = _tiny_detector()
 	bg = bytearray(32 * 32)
@@ -97,6 +182,9 @@ def test_pipeline_maps_blob_px_times_gsd() -> None:
 	assert scene.ferret.valid
 	assert abs(scene.ferret.x_px - 6.0) < 0.1
 	assert abs(scene.ferret.x_mm - 6.0 * gsd) < 1e-6
+	assert scene.ace_blobs
+	assert scene.ace_blobs[0].label == "ferret"
+	assert abs(scene.ace_blobs[0].x_mm - scene.ferret.x_mm) < 1e-6
 
 
 def test_good_empty_frame_does_not_coast_a_ghost() -> None:

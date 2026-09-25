@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Why: Ace merges Mini and carriage inside ~150 mm; hold a wider ring.
+ACE_SEP_MM = 250.0
+
 
 @dataclass(frozen=True)
 class ChasePolicyConfig:
@@ -24,3 +27,7 @@ class ChasePolicyConfig:
 	cone_half_angle_deg: float
 	threat_distance_mm: float
 	creep_distance_mm: float
+	# Why: Mini BLE rolls ~0.5 s; 0 disables lure (real ferret stays snappy).
+	lure_speed_mm_s: float = 0.0
+	# Why: 0 leaves real-ferret gaps alone; Mini hunts floor the Ace split.
+	ace_sep_mm: float = 0.0
