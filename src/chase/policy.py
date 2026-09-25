@@ -79,17 +79,20 @@ def _engage(
 		return out
 	out.enable_motion = True
 	ax, ay, reason = _engage_accel(scene, cfg, box, out)
-	out.reason = reason
 	# Why: convert soft accel (mm/s² scale) to a capped velocity command for Zaber.
 	vx, vy = _hold_ring_vel(
 		ax * cfg.velocity_gain_s, ay * cfg.velocity_gain_s, scene, cfg, box
 	)
+	vx, vy, lure = _lure_prey(vx, vy, scene, cfg, box)
+	if lure:
+		reason = lure
 	spd = math.hypot(vx, vy)
 	cap = cfg.max_engage_speed_mm_s
 	if spd > cap and spd > 1e-6:
 		s = cap / spd
 		vx *= s
 		vy *= s
+	out.reason = reason
 	out.target_vx_mm_s = vx
 	out.target_vy_mm_s = vy
 	out.flee_direction_deg = math.degrees(math.atan2(-vy, vx)) if spd > 1 else 0.0
@@ -137,6 +140,9 @@ def _hold_ring_vel(
 	fy = min(max(scene.ferret.y_mm, box.y_min), box.y_max)
 	tx, ty, dist = _norm(fx - scene.prey.x_mm, fy - scene.prey.y_mm)
 	if dist <= cfg.preferred_gap_mm:
+		return vx, vy
+	# Why: Mini lure must not slam 240 mm/s into the ring; BLE cannot follow.
+	if float(getattr(cfg, "lure_speed_mm_s", 0.0) or 0.0) > 0:
 		return vx, vy
 	floor = min(cfg.max_engage_speed_mm_s * 0.5, 240.0)
 	spd = math.hypot(vx, vy)
@@ -225,3 +231,35 @@ def _wall_push(
 		py += cy * corner * cfg.corner_gain
 	strength = max(left, right, top, bottom)
 	return px, py, strength
+
+
+def _lure_prey(
+	vx: float,
+	vy: float,
+	scene: TrackingFrame,
+	cfg: ChasePolicyConfig,
+	box: ArenaBounds,
+) -> tuple[float, float, str | None]:
+	# Why: Mini rolls on a slow GATT loop; the X-MCC used to enter and leave
+	# the ring before SM-6399 could start following.
+	cap = float(getattr(cfg, "lure_speed_mm_s", 0.0) or 0.0)
+	if cap <= 0.0:
+		return vx, vy, None
+	fx = min(max(scene.ferret.x_mm, box.x_min), box.x_max)
+	fy = min(max(scene.ferret.y_mm, box.y_min), box.y_max)
+	tx, ty, dist = _norm(fx - scene.prey.x_mm, fy - scene.prey.y_mm)
+	if dist > cfg.preferred_gap_mm:
+		return tx * min(cap, 80.0), ty * min(cap, 80.0), "reel_in"
+	if not _hunter_following(scene):
+		if dist > cfg.min_gap_mm + 20.0:
+			creep = min(40.0, cap * 0.5)
+			return tx * creep, ty * creep, "wait_hunter"
+		return 0.0, 0.0, "wait_hunter"
+	return -tx * min(cap, 70.0), -ty * min(cap, 70.0), "lead_away"
+
+
+def _hunter_following(scene: TrackingFrame) -> bool:
+	# Why: Ace speed on the Mini blob is the cue that BLE roll actually started.
+	if scene.closing_speed_mm_s > 25.0:
+		return True
+	return scene.ferret.speed_mm_s > 40.0 and scene.closing_speed_mm_s > 5.0

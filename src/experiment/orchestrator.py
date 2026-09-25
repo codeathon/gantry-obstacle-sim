@@ -133,12 +133,25 @@ class Experiment:
 
 		if not want_sphero():
 			return
+		self._enable_mini_lure()
 		# Why: uvicorn already has an event loop; Bleak asyncio.run() must not run here.
 		if self._sphero is not None:
 			self._sphero_runner = SpheroRunner(self._sphero)
 		else:
 			self._sphero_runner = SpheroRunner(factory=open_sphero)
 		self._sphero_runner.start()
+
+	def _enable_mini_lure(self) -> None:
+		# Why: Mini GATT cannot follow a 480 mm/s keep-away; wait in the ring.
+		from dataclasses import replace
+
+		from chase.config import ChasePolicyConfig
+
+		cfg = self.chase._cfg_src
+		if not isinstance(cfg, ChasePolicyConfig):
+			return
+		self.chase._cfg_src = replace(cfg, lure_speed_mm_s=80.0)
+		self.chase._refit()
 
 	def _stop_animal(self) -> None:
 		if self._sphero_runner is not None:

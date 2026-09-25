@@ -45,6 +45,19 @@ def test_sphero_factory_opens_off_start_thread(monkeypatch) -> None:
 	assert seen == ["sphero-seek"]
 
 
+def test_sphero_mode_enables_mini_lure(monkeypatch) -> None:
+	from simulation.config import load_sim_config
+
+	monkeypatch.setenv("PREY_ANIMAL", "sphero")
+	exp = Experiment(
+		ZaberGantry(), AceCamera(), cfg=load_sim_config().chase, sphero=SpheroStub()
+	)
+	exp.start()
+	lure = exp.chase._cfg.lure_speed_mm_s
+	exp.shutdown()
+	assert lure == 80.0
+
+
 def test_sphero_mode_offers_scene(monkeypatch) -> None:
 	monkeypatch.setenv("PREY_ANIMAL", "sphero")
 	toy = SpheroStub()

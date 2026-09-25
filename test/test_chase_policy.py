@@ -103,6 +103,53 @@ def test_short_travel_does_not_pin_x_to_fov_center():
 	assert d.target_vx_mm_s <= 0.0
 
 
+def test_lure_reels_in_slowly():
+	from dataclasses import replace
+
+	cfg = replace(_cfg().chase, lure_speed_mm_s=80.0)
+	d = compute_chase_decision(
+		_scene(400, 600, 1400, 600, heading=0.0, speed=0.0),
+		cfg,
+		1987.0,
+		1242.0,
+	)
+	assert d.reason == "reel_in"
+	assert d.target_vx_mm_s < 0
+	assert d.target_vx_mm_s >= -80.0
+
+
+def test_lure_waits_until_mini_moves():
+	from dataclasses import replace
+
+	cfg = replace(_cfg().chase, lure_speed_mm_s=80.0)
+	# Inside the ring, Mini still — hold/creep, do not flee.
+	d = compute_chase_decision(
+		_scene(400, 600, 700, 600, heading=0.0, speed=0.0),
+		cfg,
+		1987.0,
+		1242.0,
+	)
+	assert d.reason == "wait_hunter"
+	assert d.target_vx_mm_s <= 0.0
+	assert abs(d.target_vx_mm_s) <= 40.0
+
+
+def test_lure_leads_slowly_when_mini_closes():
+	from dataclasses import replace
+
+	cfg = replace(_cfg().chase, lure_speed_mm_s=80.0)
+	# Ferret heading +x toward prey at 700 — Mini is responding.
+	d = compute_chase_decision(
+		_scene(400, 600, 700, 600, heading=0.0, speed=200.0),
+		cfg,
+		1987.0,
+		1242.0,
+	)
+	assert d.reason == "lead_away"
+	assert d.target_vx_mm_s > 0
+	assert d.target_vx_mm_s <= 70.0
+
+
 def test_corner_pushes_inward():
 	cfg = _cfg()
 	d = compute_chase_decision(

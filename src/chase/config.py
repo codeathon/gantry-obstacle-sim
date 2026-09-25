@@ -24,3 +24,5 @@ class ChasePolicyConfig:
 	cone_half_angle_deg: float
 	threat_distance_mm: float
 	creep_distance_mm: float
+	# Why: Mini BLE rolls ~0.5 s; 0 disables lure (real ferret stays snappy).
+	lure_speed_mm_s: float = 0.0
