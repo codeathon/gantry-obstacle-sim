@@ -25,9 +25,14 @@ class BleSphero:
 			set_h(0)
 
 	def set_led(self, r: int, g: int, b: int) -> None:
+		# Why: Edu API takes Color, not r,g,b — a TypeError used to abort the roll check.
 		fn = getattr(self._api, "set_main_led", None)
-		if callable(fn):
-			fn(int(r), int(g), int(b))
+		if not callable(fn):
+			return
+		try:
+			fn(_led_color(r, g, b))
+		except Exception:
+			return
 
 	def roll(self, speed: float, heading_deg: float) -> None:
 		# Why: Edu API is roll(heading, speed); we store speed-first in the protocol.
@@ -42,6 +47,15 @@ class BleSphero:
 		exit_fn = getattr(self._api, "__exit__", None)
 		if callable(exit_fn):
 			exit_fn(None, None, None)
+
+
+def _led_color(r: int, g: int, b: int):
+	try:
+		from spherov2.types import Color
+
+		return Color(r=int(r), g=int(g), b=int(b))
+	except ImportError:
+		return type("Color", (), {"r": int(r), "g": int(g), "b": int(b)})()
 
 
 def connect_ble() -> BleSphero:
